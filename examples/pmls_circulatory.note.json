@@ -1,0 +1,253 @@
+{
+  "title": "Circulatory, Lymphatic & Immune Systems",
+  "theme": "circulatory",
+  "pack": "study_notes",
+  "blocks": [
+    {
+      "layout": "full",
+      "type": "banner",
+      "text": "Circulatory, Lymphatic & Immune Systems",
+      "subtitle": "Transport, drainage, and defense throughout the body",
+      "images": []
+    },
+    {
+      "layout": "auto",
+      "type": "script_heading",
+      "text": "The Circulatory System"
+    },
+    {
+      "layout": "auto",
+      "type": "body",
+      "text": "The **Circulatory System** transports blood containing **oxygen** and **nutrients** throughout the body and picks up **metabolic waste products** for disposal."
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Pulmonary circulation",
+      "definition": "Carries blood between the **heart** and the **lungs** for **gas exchange**."
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Systemic circulation",
+      "definition": "Carries blood between the **heart** and the rest of the **body's tissues**."
+    },
+    {
+      "layout": "auto",
+      "type": "script_heading",
+      "text": "The Heart"
+    },
+    {
+      "layout": "auto",
+      "type": "body",
+      "text": "The **heart** is the major structure of the circulatory system. It is a **muscular organ** that pumps blood through **contraction** and **circulates** it throughout the body. It is located in the **thoracic cavity** behind and slightly to the **left of the sternum**, between the lungs."
+    },
+    {
+      "layout": "auto",
+      "type": "subheading",
+      "text": "Layers of the Heart",
+      "caps": false
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Pericardium",
+      "definition": "**Supports and lubricates** the heart during contraction."
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Epicardium",
+      "definition": "The **outer layer**."
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Myocardium",
+      "definition": "The **middle layer**."
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Endocardium",
+      "definition": "The **innermost layer**."
+    },
+    {
+      "layout": "auto",
+      "type": "subheading",
+      "text": "Chambers",
+      "caps": false
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Atria",
+      "definition": "The **upper chambers** on each side of the heart."
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Ventricle",
+      "definition": "The **lower chambers**."
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Interatrial Septum",
+      "definition": "**Divides the two atria**."
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Interventricular Septum",
+      "definition": "**Divides the two ventricles**."
+    },
+    {
+      "layout": "auto",
+      "type": "subheading",
+      "text": "Valves",
+      "caps": false
+    },
+    {
+      "layout": "auto",
+      "type": "list",
+      "ordered": false,
+      "items": [
+        {
+          "text": "**Right Atrioventricular (AV) valve**, also called the **Tricuspid valve**",
+          "children": []
+        },
+        {
+          "text": "**Pulmonary semilunar (pulmonic) valve**",
+          "children": []
+        },
+        {
+          "text": "**Left Atrioventricular (AV) valve**, also called the **Bicuspid valve** or **Mitral valve**",
+          "children": []
+        },
+        {
+          "text": "**Aortic semilunar valve**",
+          "children": []
+        }
+      ]
+    },
+    {
+      "layout": "auto",
+      "type": "script_heading",
+      "text": "The Circulatory Pathway"
+    },
+    {
+      "layout": "auto",
+      "type": "subheading",
+      "text": "Blood Vessels",
+      "caps": false
+    },
+    {
+      "layout": "auto",
+      "type": "body",
+      "text": "**Arteries** are blood vessels that have **three discrete layers** surrounding the **lumen**, or the space in which blood flows: the **tunica adventitia**, or outer layer; the **tunica media**, or middle layer; and the **tunica intima**, or inner layer."
+    },
+    {
+      "layout": "auto",
+      "type": "subheading",
+      "text": "Arteries",
+      "caps": false
+    },
+    {
+      "layout": "auto",
+      "type": "body",
+      "text": "**Arteries** are blood vessels that carry blood **away from the heart**. They have **thick walls** because the blood that moves through them is under **pressure** from the contraction of the ventricles."
+    },
+    {
+      "layout": "auto",
+      "type": "body",
+      "text": "Arteries branch into smaller vessels called **arterioles**, which ultimately branch to form **capillaries**."
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Ischemia",
+      "definition": "**Lack of oxygen** in the arteries that causes **damage to the muscle**."
+    },
+    {
+      "layout": "auto",
+      "type": "term_definition",
+      "term": "Myocardial Infarction (MI, or heart attack)",
+      "definition": "Occurs when the heart receives **inadequate blood supply** through the **coronary arteries**."
+    },
+    {
+      "layout": "auto",
+      "type": "subheading",
+      "text": "Capillaries",
+      "caps": false
+    },
+    {
+      "layout": "auto",
+      "type": "body",
+      "text": "**Capillaries** are composed only of the **tunica intima**, a **single layer of endothelial cells**. This allows **rapid diffusion** of gases and nutrients between tissues and blood across the **capillary membrane**."
+    },
+    {
+      "layout": "auto",
+      "type": "subheading",
+      "text": "Veins",
+      "caps": false
+    },
+    {
+      "layout": "auto",
+      "type": "body",
+      "text": "**Veins** carry blood **back toward the heart**. Veins have **thinner walls** and **less muscle** than arteries do, because they do not experience large fluctuations in blood pressure. Veins are **closer to the surface** than are arteries."
+    },
+    {
+      "layout": "full",
+      "type": "table",
+      "headers": [
+        "Vessel",
+        "Function",
+        "Wall Structure"
+      ],
+      "rows": [
+        [
+          "**Arteries**",
+          "Carry blood **away from the heart**",
+          "**Thick walls**; three layers under **pressure** from ventricular contraction"
+        ],
+        [
+          "**Capillaries**",
+          "Allow **diffusion** of gases and nutrients",
+          "Only the **tunica intima** — a **single layer of endothelial cells**"
+        ],
+        [
+          "**Veins**",
+          "Carry blood **back toward the heart**",
+          "**Thinner walls**, **less muscle**; located **closer to the surface**"
+        ]
+      ],
+      "caption": "Comparison of arteries, capillaries, and veins"
+    },
+    {
+      "layout": "auto",
+      "type": "script_heading",
+      "text": "Circulatory Anatomy of the Antecubital Fossa"
+    },
+    {
+      "layout": "auto",
+      "type": "body",
+      "text": "The **Antecubital Fossa** is the area just **distal to the elbow joint** where blood is usually drawn. Becoming familiar with the anatomy of this area will help you **draw blood safely and confidently**."
+    },
+    {
+      "layout": "auto",
+      "type": "callout",
+      "variant": "key_points",
+      "title": "Key Points",
+      "items": [
+        "The **Circulatory System** transports oxygen and nutrients and removes metabolic waste.",
+        "**Pulmonary circulation** serves the lungs; **systemic circulation** serves the rest of the body.",
+        "Heart layers (outer→inner): **Pericardium**, **Epicardium**, **Myocardium**, **Endocardium**.",
+        "Chambers: **Atria** (upper) and **Ventricles** (lower), divided by the **interatrial** and **interventricular septa**.",
+        "Four valves: **Tricuspid**, **Pulmonary semilunar**, **Bicuspid/Mitral**, and **Aortic semilunar**.",
+        "**Arteries** carry blood away from the heart (thick walls); **veins** return blood (thinner walls); **capillaries** enable diffusion.",
+        "The **Antecubital Fossa**, distal to the elbow, is the usual site for **blood draws**."
+      ]
+    }
+  ]
+}

@@ -39,11 +39,22 @@ Diannot **never** hardcodes or stores API keys. The Claude Agent SDK authenticat
 
 ## Usage (Phase 1)
 ```bash
-# Render a note JSON to themed HTML (+ optional PDF/PNG)
+# 1. Scaffold a new note to edit by hand
+uv run diannot create my-notes/heart.json --title "The Heart" --theme circulatory
+
+# 2. Or ingest raw material and let Claude structure it into blocks
+uv run diannot ingest lecture.txt --title "The Heart" --theme circulatory --render
+uv run diannot ingest "notes.pdf" --pages 1-3 --theme histology --render --pdf
+
+# 3. Render any note JSON to themed HTML (+ optional PDF/PNG)
 uv run diannot render examples/circulatory.json --pdf --png
-uv run diannot render examples/circulatory.json --theme histology   # same content, re-themed
+uv run diannot render examples/circulatory.json --theme histology   # re-theme the same content
 ```
 Open the resulting `output/*.html` in any browser.
+
+Available themes live in `src/diannot/themes/` (`circulatory`, `histology` so far —
+add a new one by dropping in a TOML file). Fonts currently load from the Google
+Fonts CDN; local vendoring for fully-offline rendering is a planned increment.
 
 ## Configuration
 Edit `diannot.toml` (models, default theme/pack, output paths). Environment overrides use the
