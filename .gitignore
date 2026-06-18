@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# uv / venv
+.venv/
+# (uv.lock IS committed — Diannot is an app, so we pin for reproducibility.)
+
+# Diannot output (rendered HTML/PDF/PNG)
+output/
+
+# Credentials / local config
+.env
+*.local.toml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Scratch
+_pdfpeek/
+
+# Personal source notes (large binaries kept out of history; store under a notebook later)
+/*.pdf

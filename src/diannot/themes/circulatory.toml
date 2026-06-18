@@ -1,0 +1,25 @@
+# Circulatory / Lymphatic / Blood — reds, pinks, maroon.
+name = "Circulatory / Lymphatic / Blood"
+
+[colors]
+primary = "#C0223B"        # crimson — script headings & subheadings
+primary_dark = "#7E1022"   # maroon — bold key terms
+accent = "#E78AA0"         # pink — dashes, rules, secondary accents
+accent_soft = "#FCE7EC"    # pale pink — soft fills
+ink = "#2B2B2B"            # body text
+page = "#FFFFFF"
+
+banner_fill = "#FFFFFF"
+banner_stroke = "#B11E3A"
+banner_shadow = "#E78AA0"
+
+table_head_bg = "#C0223B"
+table_head_ink = "#FFFFFF"
+table_zebra = "#FBEAEE"
+
+callout_tip_bg = "#FCE7EC"
+callout_tip_border = "#E78AA0"
+callout_key_bg = "#FFF4F6"
+callout_key_border = "#C0223B"
+callout_warn_bg = "#FFF6E6"
+callout_warn_border = "#E0A100"

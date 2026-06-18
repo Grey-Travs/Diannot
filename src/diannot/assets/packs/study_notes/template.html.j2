@@ -1,0 +1,90 @@
+{#- study_notes pack: two-column, light/playful "aesthetic study-notes" layout. -#}
+{% macro render_list(items, ordered) %}
+<{{ 'ol' if ordered else 'ul' }} class="list">
+{% for it in items %}
+  <li>{{ it.text | inline_md }}{% if it.children %}{{ render_list(it.children, ordered) }}{% endif %}</li>
+{% endfor %}
+</{{ 'ol' if ordered else 'ul' }}>
+{% endmacro %}
+{% macro render_block(b) %}
+{% set cls = 'full' if b.layout == 'full' else '' %}
+{% if b.type == 'banner' %}
+  <header class="banner">
+    {% if b.images %}<div class="banner-imgs">{% for im in b.images %}<img src="{{ im }}" alt="">{% endfor %}</div>{% endif %}
+    <h1>{{ b.text }}</h1>
+    {% if b.subtitle %}<p class="banner-sub">{{ b.subtitle }}</p>{% endif %}
+  </header>
+{% elif b.type == 'script_heading' %}
+  <h2 class="script-h {{ cls }}">{{ b.text }}</h2>
+{% elif b.type == 'subheading' %}
+  <h3 class="subhead {{ 'caps' if b.caps else '' }} {{ cls }}">{{ b.text }}</h3>
+{% elif b.type == 'body' %}
+  <p class="body {{ cls }}">{{ b.text | inline_md }}</p>
+{% elif b.type == 'term_definition' %}
+  <p class="termdef {{ cls }}"><span class="term">{{ b.term }}</span> <span class="dash">&mdash;</span> {{ b.definition | inline_md }}</p>
+{% elif b.type == 'list' %}
+  <div class="list-wrap {{ cls }}">{{ render_list(b.items, b.ordered) }}</div>
+{% elif b.type == 'table' %}
+  <figure class="table-wrap {{ cls }}">
+    <table class="tbl">
+      <thead><tr>{% for h in b.headers %}<th>{{ h | inline_md }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for row in b.rows %}<tr>{% for cell in row %}<td>{{ cell | inline_md }}</td>{% endfor %}</tr>{% endfor %}
+      </tbody>
+    </table>
+    {% if b.caption %}<figcaption>{{ b.caption }}</figcaption>{% endif %}
+  </figure>
+{% elif b.type == 'image' %}
+  <figure class="img {{ cls }}">
+    <img src="{{ b.src }}" alt="{{ b.alt or '' }}">
+    {% if b.caption or b.source_credit %}<figcaption>{{ b.caption or '' }}{% if b.source_credit %} <span class="credit">{{ b.source_credit }}</span>{% endif %}</figcaption>{% endif %}
+  </figure>
+{% elif b.type == 'diagram' %}
+  <figure class="diagram {{ cls }}"><pre class="mermaid-src">{{ b.mermaid }}</pre>{% if b.caption %}<figcaption>{{ b.caption }}</figcaption>{% endif %}</figure>
+{% elif b.type == 'callout' %}
+  <aside class="callout {{ b.variant }} {{ cls }}">
+    {% if b.title %}<div class="callout-title">{{ b.title }}</div>{% endif %}
+    {% if b.body %}<p>{{ b.body | inline_md }}</p>{% endif %}
+    {% if b.items %}<ul>{% for it in b.items %}<li>{{ it | inline_md }}</li>{% endfor %}</ul>{% endif %}
+  </aside>
+{% elif b.type == 'quote' %}
+  <blockquote class="quote {{ cls }}">{{ b.text | inline_md }}{% if b.attribution %}<cite>&mdash; {{ b.attribution }}</cite>{% endif %}</blockquote>
+{% endif %}
+{% endmacro %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ note.title }}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito+Sans:ital,wght@0,400;0,600;0,700;1,400&family=Poppins:wght@500;600;700&family=Sacramento&display=swap');
+:root{
+  --c-primary: {{ theme.colors.primary }};
+  --c-primary-dark: {{ theme.colors.primary_dark }};
+  --c-accent: {{ theme.colors.accent }};
+  --c-accent-soft: {{ theme.colors.accent_soft }};
+  --c-ink: {{ theme.colors.ink }};
+  --c-page: {{ theme.colors.page }};
+  --c-banner-fill: {{ theme.colors.banner_fill }};
+  --c-banner-stroke: {{ theme.colors.banner_stroke }};
+  --c-banner-shadow: {{ theme.colors.banner_shadow }};
+  --c-thead-bg: {{ theme.colors.table_head_bg }};
+  --c-thead-ink: {{ theme.colors.table_head_ink }};
+  --c-zebra: {{ theme.colors.table_zebra }};
+  --c-tip-bg: {{ theme.colors.callout_tip_bg }};
+  --c-tip-border: {{ theme.colors.callout_tip_border }};
+  --c-key-bg: {{ theme.colors.callout_key_bg }};
+  --c-key-border: {{ theme.colors.callout_key_border }};
+  --c-warn-bg: {{ theme.colors.callout_warn_bg }};
+  --c-warn-border: {{ theme.colors.callout_warn_border }};
+}
+{{ pack_css | safe }}
+</style>
+</head>
+<body>
+<main class="page">
+{% for b in note.blocks %}{{ render_block(b) }}{% endfor %}
+</main>
+</body>
+</html>

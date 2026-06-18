@@ -1,0 +1,25 @@
+# Cell Anatomy & Tissues (Histology) — teal/turquoise with pink accents.
+name = "Cell Anatomy & Tissues"
+
+[colors]
+primary = "#127C7C"        # teal — script headings & subheadings
+primary_dark = "#0C5757"   # deep teal — bold key terms
+accent = "#E48FA0"         # pink — dashes, rules, secondary accents
+accent_soft = "#E5F4F3"    # pale teal — soft fills
+ink = "#2B2B2B"            # body text
+page = "#FFFFFF"
+
+banner_fill = "#FFFFFF"
+banner_stroke = "#127C7C"
+banner_shadow = "#7FC9C7"
+
+table_head_bg = "#127C7C"
+table_head_ink = "#FFFFFF"
+table_zebra = "#E5F4F3"
+
+callout_tip_bg = "#E5F4F3"
+callout_tip_border = "#7FC9C7"
+callout_key_bg = "#F0FAFA"
+callout_key_border = "#127C7C"
+callout_warn_bg = "#FFF6E6"
+callout_warn_border = "#E0A100"

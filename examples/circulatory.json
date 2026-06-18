@@ -1,0 +1,133 @@
+{
+  "title": "Circulatory, Lymphatic & Immune Systems",
+  "theme": "circulatory",
+  "pack": "study_notes",
+  "subject": "Anatomy & Physiology",
+  "blocks": [
+    {
+      "type": "banner",
+      "text": "Circulatory, Lymphatic & Immune Systems",
+      "subtitle": "Medical Laboratory Science — Anatomy & Physiology"
+    },
+    {
+      "type": "script_heading",
+      "text": "The Circulatory System"
+    },
+    {
+      "type": "body",
+      "text": "The **circulatory system** transports blood throughout the body — carrying **oxygen** and **nutrients** to the tissues and picking up **metabolic waste** for disposal."
+    },
+    {
+      "type": "term_definition",
+      "term": "Pulmonary circulation",
+      "definition": "carries blood between the **heart** and the **lungs** for gas exchange."
+    },
+    {
+      "type": "term_definition",
+      "term": "Systemic circulation",
+      "definition": "carries blood between the heart and the rest of the body's tissues."
+    },
+    {
+      "type": "script_heading",
+      "text": "Layers of the Heart"
+    },
+    {
+      "type": "term_definition",
+      "term": "Pericardium",
+      "definition": "supports and **lubricates** the heart during contraction."
+    },
+    {
+      "type": "term_definition",
+      "term": "Epicardium",
+      "definition": "the **outer** layer."
+    },
+    {
+      "type": "term_definition",
+      "term": "Myocardium",
+      "definition": "the **middle** layer; the muscular wall that pumps blood."
+    },
+    {
+      "type": "term_definition",
+      "term": "Endocardium",
+      "definition": "the **innermost** layer."
+    },
+    {
+      "type": "script_heading",
+      "text": "Chambers & Valves"
+    },
+    {
+      "type": "term_definition",
+      "term": "Atria",
+      "definition": "the **upper** chambers on each side of the heart."
+    },
+    {
+      "type": "term_definition",
+      "term": "Ventricles",
+      "definition": "the **lower** chambers that pump blood out of the heart."
+    },
+    {
+      "type": "body",
+      "text": "The **interatrial septum** divides the two atria, while the **interventricular septum** divides the two ventricles."
+    },
+    {
+      "type": "subheading",
+      "text": "Heart Valves",
+      "caps": true
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        { "text": "Right AV valve — the **tricuspid** valve" },
+        { "text": "Left AV valve — the **bicuspid (mitral)** valve" },
+        {
+          "text": "Semilunar valves",
+          "children": [
+            { "text": "**Pulmonary** semilunar valve" },
+            { "text": "**Aortic** semilunar valve" }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "script_heading",
+      "text": "Blood Vessels"
+    },
+    {
+      "type": "table",
+      "headers": ["Vessel", "Direction of flow", "Wall structure", "Key feature"],
+      "rows": [
+        ["**Arteries**", "Carry blood **away** from the heart", "Thick, muscular, elastic", "Withstand high **pressure**"],
+        ["**Veins**", "Carry blood **toward** the heart", "Thinner walls, less muscle", "Contain **valves**; low pressure"],
+        ["**Capillaries**", "Connect arteries to veins", "Single layer of **endothelium**", "Site of **gas & nutrient exchange**"]
+      ],
+      "caption": "The three discrete vessel types and how they differ."
+    },
+    {
+      "type": "callout",
+      "variant": "key_points",
+      "title": "Key Points",
+      "items": [
+        "**Plasma** is ~55% of blood volume; **formed elements** make up ~45%.",
+        "**Erythrocytes (RBCs)** carry **hemoglobin**; **leukocytes (WBCs)** defend against infection.",
+        "**Hemostasis** is the process that stops bleeding when a vessel is injured."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "tutor_tip",
+      "title": "Tutor Tip",
+      "body": "Remember: **A**rteries carry blood **A**way from the heart — both start with A."
+    },
+    {
+      "type": "diagram",
+      "mermaid": "graph LR; Heart-->Arteries; Arteries-->Capillaries; Capillaries-->Veins; Veins-->Heart",
+      "caption": "Systemic blood flow (diagram rendering arrives in a later phase)."
+    },
+    {
+      "type": "quote",
+      "text": "Blood is a circulating connective tissue.",
+      "attribution": "A&P fundamentals"
+    }
+  ]
+}
