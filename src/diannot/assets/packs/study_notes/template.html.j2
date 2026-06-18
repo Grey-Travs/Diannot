@@ -58,7 +58,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ note.title }}</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito+Sans:ital,wght@0,400;0,600;0,700;1,400&family=Poppins:wght@500;600;700&family=Sacramento&display=swap');
+{{ font_css | safe }}
 :root{
   --c-primary: {{ theme.colors.primary }};
   --c-primary-dark: {{ theme.colors.primary_dark }};

@@ -53,8 +53,8 @@ uv run diannot render examples/circulatory.json --theme histology   # re-theme t
 Open the resulting `output/*.html` in any browser.
 
 Available themes live in `src/diannot/themes/` (`circulatory`, `histology` so far —
-add a new one by dropping in a TOML file). Fonts currently load from the Google
-Fonts CDN; local vendoring for fully-offline rendering is a planned increment.
+add a new one by dropping in a TOML file). Fonts are bundled locally (OFL `woff2`) and
+embedded into each note, so rendering is fully offline.
 
 ## Configuration
 Edit `diannot.toml` (models, default theme/pack, output paths). Environment overrides use the

@@ -48,9 +48,10 @@ All four are **SIL Open Font License (OFL)** → safe to bundle locally for offl
 | Clean regular sans — body text | **Nunito Sans** | `.body` and base |
 | Chunky outlined display — chapter banners | **Baloo 2** (800) | `.banner h1` |
 
-Currently loaded via Google Fonts CDN for speed of iteration. **TODO (next increment):
-vendor the OFL `.ttf` files locally under `src/diannot/assets/fonts/` for true offline /
-local-first rendering.**
+Vendored locally as OFL `woff2` (latin subset) under `src/diannot/assets/fonts/` and
+declared per-pack in `fonts.toml`. The renderer base64-embeds them into the note's
+`<style>`, so output HTML/PDF is fully self-contained and offline. The Google Fonts CDN
+`@import` remains only as an automatic fallback if a font file is missing.
 
 Banner poster effect = `-webkit-text-stroke` (outline) + `text-shadow` (drop shadow) +
 `paint-order: stroke fill`. This is why we render PDFs with Chromium.
