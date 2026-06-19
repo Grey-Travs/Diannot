@@ -135,6 +135,21 @@ def load_image_sources(path: Path | str, pages: str | None = None, dpi: int = 20
     raise ValueError(f"'{path.name}' is not an image or PDF.")
 
 
+def page_numbers_for(path: Path | str, pages: str | None = None) -> list[int]:
+    """1-based page numbers that :func:`load_image_sources` would produce, in order."""
+    path = Path(path)
+    if path.suffix.lower() == ".pdf":
+        import fitz
+
+        doc = fitz.open(path)
+        try:
+            idxs = parse_pages(pages, doc.page_count) if pages else range(doc.page_count)
+            return [i + 1 for i in idxs]
+        finally:
+            doc.close()
+    return [1]  # a single image file is "page 1"
+
+
 def ocr_image_sources(images: list[bytes], lang: str = "eng") -> str:
     """Offline OCR of PNG image bytes via Tesseract (the `ocr` extra)."""
     try:

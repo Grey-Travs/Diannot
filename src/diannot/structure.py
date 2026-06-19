@@ -86,7 +86,13 @@ RULES:
    reading order (reconstruct across columns). For photographs, diagrams or micrographs
    you cannot transcribe, capture them briefly as a body note or an image caption that
    describes them — never invent labels, numbers, or text you cannot clearly read.
-9. Output valid JSON only. Escape characters properly. No trailing commas.
+9. CONFIDENCE: any block may include "confidence": "low" or "medium" when its text is
+   uncertain (illegible/blurry source, ambiguous wording, a number you are unsure of, or
+   content you had to reconstruct). Omit "confidence" for clearly-read content. Never
+   guess silently — flag it instead.
+10. SOURCE PAGE: when page numbers are provided to you, set each block's "source_page"
+    to the page number it came from.
+11. Output valid JSON only. Escape characters properly. No trailing commas.
 """
 
 
@@ -106,17 +112,18 @@ def _build_user_prompt(raw_text: str, title: str | None) -> str:
     )
 
 
-def _build_vision_prompt(title: str | None, n_images: int) -> str:
+def _build_vision_prompt(title: str | None, n_images: int, pages_label: str | None = None) -> str:
     title_hint = (
         f'The chapter title is "{title}". Use it for the banner.\n'
         if title
         else "Infer the chapter title from the page(s) for the banner.\n"
     )
+    page_line = f"These image(s) are page(s) {pages_label} (in order). " if pages_label else ""
     return (
         title_hint
-        + f"You are given {n_images} page image(s) of study material. Transcribe and "
-        "structure ALL of their content into the JSON document described in your "
-        "instructions, in logical reading order. Output JSON only."
+        + f"You are given {n_images} page image(s) of study material. {page_line}"
+        "Transcribe and structure ALL of their content into the JSON document described "
+        "in your instructions, in logical reading order. Output JSON only."
     )
 
 
@@ -258,15 +265,22 @@ def structure_image(
     model: str | None = None,
     settings: Settings | None = None,
     max_retries: int = 2,
+    source_pages: list[int] | None = None,
 ) -> Note:
-    """Structure page image(s) (PNG bytes) into a validated :class:`Note` via vision."""
+    """Structure page image(s) (PNG bytes) into a validated :class:`Note` via vision.
+
+    ``source_pages`` are the 1-based page numbers of ``images`` (in order). When a single
+    page is given, every block is attributed to it; for multiple pages the model attributes
+    each block via its ``source_page`` field.
+    """
     if not images:
         raise ValueError("No images to structure.")
     settings = settings or Settings()
     model = model or settings.models.structure
+    pages_label = ", ".join(str(p) for p in source_pages) if source_pages else None
 
     base_content: list[dict] = [
-        {"type": "text", "text": _build_vision_prompt(title, len(images))}
+        {"type": "text", "text": _build_vision_prompt(title, len(images), pages_label)}
     ]
     for img in images:
         base_content.append(
@@ -296,5 +310,8 @@ def structure_image(
         text, last_stderr = asyncio.run(_run_multimodal(content, model))
         note, last_error = _note_from_response(text, title, theme, pack)
         if note is not None:
+            if source_pages and len(source_pages) == 1:
+                for block in note.blocks:
+                    block.source_page = source_pages[0]
             return note
     raise _failure(max_retries, last_error, last_stderr)

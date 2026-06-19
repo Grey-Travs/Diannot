@@ -7,9 +7,9 @@
 </{{ 'ol' if ordered else 'ul' }}>
 {% endmacro %}
 {% macro render_block(b) %}
-{% set cls = 'full' if b.layout == 'full' else '' %}
+{% set cls = (('full ' if b.layout == 'full' else '') ~ ('flag-' ~ b.confidence if b.confidence in ['low', 'medium'] else '')) | trim %}
 {% if b.type == 'banner' %}
-  <header class="banner">
+  <header class="banner {{ cls }}">
     {% if b.images %}<div class="banner-imgs">{% for im in b.images %}<img src="{{ im }}" alt="">{% endfor %}</div>{% endif %}
     <h1>{{ b.text }}</h1>
     {% if b.subtitle %}<p class="banner-sub">{{ b.subtitle }}</p>{% endif %}

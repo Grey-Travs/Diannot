@@ -16,6 +16,7 @@ from .ingest import (
     load_image_sources,
     load_raw_text,
     ocr_image_sources,
+    page_numbers_for,
 )
 from .models import Note
 from .structure import structure_image, structure_text
@@ -64,20 +65,20 @@ def ingest_file(
 
     if mode == "vision":
         images = load_image_sources(path, pages, dpi=dpi)
-        return structure_image(
-            images, title=title, theme=theme, pack=pack, model=model, settings=settings
+        note = structure_image(
+            images, title=title, theme=theme, pack=pack, model=model, settings=settings,
+            source_pages=page_numbers_for(path, pages),
         )
-    if mode == "tesseract":
+    elif mode == "tesseract":
         raw = ocr_image_sources(load_image_sources(path, pages, dpi=dpi))
         if not raw.strip():
             raise ValueError("Tesseract OCR produced no text.")
-        return structure_text(
-            raw, title=title, theme=theme, pack=pack, model=model, settings=settings
-        )
+        note = structure_text(raw, title=title, theme=theme, pack=pack, model=model, settings=settings)
+    else:
+        raw = load_raw_text(path, pages)
+        if not raw.strip():
+            raise ValueError("No text extracted (scanned PDF? try --vision).")
+        note = structure_text(raw, title=title, theme=theme, pack=pack, model=model, settings=settings)
 
-    raw = load_raw_text(path, pages)
-    if not raw.strip():
-        raise ValueError("No text extracted (scanned PDF? try --vision).")
-    return structure_text(
-        raw, title=title, theme=theme, pack=pack, model=model, settings=settings
-    )
+    note.source = str(path)
+    return note

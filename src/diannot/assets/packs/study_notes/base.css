@@ -146,6 +146,10 @@ figure.diagram { margin: 9px 0; break-inside: avoid; }
 .callout.warning { background: var(--c-warn-bg); border-color: var(--c-warn-border); }
 .callout.warning .callout-title { color: #9a6b00; }
 
+/* ---- Confidence flags (uncertain extractions) ---- */
+.flag-low { box-shadow: inset 3px 0 0 0 #E0A100; padding-left: 8px; }
+.flag-medium { box-shadow: inset 3px 0 0 0 #E9C46A; padding-left: 8px; }
+
 /* ---- Quote ---- */
 blockquote.quote {
   break-inside: avoid;

@@ -20,6 +20,9 @@ class _Block(BaseModel):
     """Fields shared by every block."""
 
     layout: Layout = "auto"
+    # Provenance + confidence (set during ingestion; optional for hand-authored notes).
+    source_page: Optional[int] = None
+    confidence: Optional[Literal["high", "medium", "low"]] = None
 
 
 class BannerBlock(_Block):
@@ -148,7 +151,7 @@ class Note(BaseModel):
     theme: str = "circulatory"
     pack: str = "study_notes"
     subject: Optional[str] = None
-    source_pdf: Optional[str] = None
+    source: Optional[str] = None  # source file this note was ingested from
     blocks: list[Block] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
