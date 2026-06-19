@@ -49,16 +49,55 @@ def extract_text_from_pdf(path: Path | str, pages: str | None = None) -> str:
     return "\n\n".join(parts).strip()
 
 
+def extract_text_from_docx(path: Path | str) -> str:
+    """Extract text (paragraphs + tables) from a Word ``.docx`` file."""
+    import docx
+
+    document = docx.Document(str(path))
+    parts: list[str] = [p.text for p in document.paragraphs if p.text.strip()]
+    for table in document.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells]
+            if any(cells):
+                parts.append(" | ".join(cells))
+    return "\n".join(parts).strip()
+
+
+def extract_text_from_pptx(path: Path | str) -> str:
+    """Extract text from a PowerPoint ``.pptx`` (one block per slide)."""
+    from pptx import Presentation
+
+    prs = Presentation(str(path))
+    slides: list[str] = []
+    for index, slide in enumerate(prs.slides, start=1):
+        lines: list[str] = []
+        for shape in slide.shapes:
+            if shape.has_text_frame and shape.text_frame.text.strip():
+                lines.append(shape.text_frame.text.strip())
+            if shape.has_table:
+                for row in shape.table.rows:
+                    cells = [c.text.strip() for c in row.cells]
+                    if any(cells):
+                        lines.append(" | ".join(cells))
+        if lines:
+            slides.append(f"# Slide {index}\n" + "\n".join(lines))
+    return "\n\n".join(slides).strip()
+
+
 def load_raw_text(path: Path | str, pages: str | None = None) -> str:
-    """Load raw text from a ``.txt``/``.md`` file or a simple ``.pdf``."""
+    """Load raw text from a ``.txt``/``.md``, ``.pdf``, ``.docx`` or ``.pptx`` file."""
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         return extract_text_from_pdf(path, pages)
+    if suffix == ".docx":
+        return extract_text_from_docx(path)
+    if suffix == ".pptx":
+        return extract_text_from_pptx(path)
     if suffix in TEXT_SUFFIXES:
         return path.read_text(encoding="utf-8").strip()
     raise ValueError(
-        f"Unsupported text input '{path.name}' (expected .txt, .md or .pdf)."
+        f"Unsupported text input '{path.name}' (expected .txt, .md, .pdf, .docx or .pptx)."
     )
 
 
