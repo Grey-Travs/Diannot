@@ -8,6 +8,7 @@ from nicegui import ui
 
 from ...models import BannerBlock, BodyBlock, Note, ScriptHeadingBlock
 from ..layout import studio_layout
+from ..onboarding import maybe_first_run
 from ..workspace import SAMPLE_DIR, current_workspace, list_notes, set_workspace
 
 
@@ -54,6 +55,7 @@ def _change_folder_dialog(workspace: Path | None) -> None:
 @ui.page("/")
 def home_page() -> None:
     studio_layout("")
+    maybe_first_run()
     workspace = current_workspace()
     with ui.column().classes("w-full p-4 gap-4"):
         with ui.row().classes("items-center justify-between w-full"):

@@ -21,6 +21,9 @@ output/
 .diannot_index.db
 *.diannot_index.db
 
+# NiceGUI / Diannot Studio server storage
+.nicegui/
+
 # OS / editor
 .DS_Store
 Thumbs.db

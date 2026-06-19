@@ -11,6 +11,7 @@ from pathlib import Path
 from nicegui import ui
 
 from . import previews  # noqa: F401  — registers /preview routes
+from .credentials import load_persisted_key
 from .pages import (  # noqa: F401  — registers @ui.page
     help,
     home,
@@ -32,6 +33,7 @@ def launch_studio(
 ) -> None:
     """Start Diannot Studio (blocks until closed)."""
     set_initial_workspace(workspace)
+    load_persisted_key()
     ui.run(
         native=native,
         host=host,

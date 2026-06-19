@@ -16,6 +16,16 @@ glossary/search), tests + CI, packaging and Docker.
 
 **New here? Read the [User Guide](GUIDE.md).** See [CLAUDE.md](CLAUDE.md) for the design system.
 
+### Diannot Studio (the app)
+Prefer a window over the command line? Launch the full app:
+```bash
+uv sync --extra gui
+uv run diannot studio          # native desktop window (or add --web for a browser tab)
+```
+Studio wraps everything — a notes Library, an Import wizard, the block Editor with live
+preview + PDF/PNG export, a Study hub (flashcards · spaced-repetition review · quizzes ·
+glossary), Search, and Settings — with a beginner-friendly first-run tour.
+
 ## Requirements
 - Python 3.11+ (the project pins 3.13 via `.python-version`)
 - [`uv`](https://docs.astral.sh/uv/)

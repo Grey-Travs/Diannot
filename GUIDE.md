@@ -8,6 +8,24 @@ JSON files on disk, and rendering works offline.
 
 ---
 
+## 0. The app — Diannot Studio (easiest)
+
+Don't want the command line? Run the windowed app:
+```bash
+uv sync --extra gui
+uv run playwright install chromium   # one-time, for PDF/PNG export
+uv run diannot studio                # opens a desktop window (add --web for a browser tab)
+```
+A first-run tour walks you through it. Studio has everything in one place:
+- **Home** — your notes; make a new one or open one.
+- **Make notes** — drop in a PDF/slides/document/photo; the AI structures it.
+- **Note** — edit blocks with a live preview; export PDF/PNG.
+- **Study** — flashcards, spaced-repetition review, quizzes, glossary.
+- **Search** — find anything across your notes.
+- **Settings** — paste a Claude key (or sign in to the Claude app) and pick defaults.
+
+The rest of this guide covers the underlying commands (handy for automation).
+
 ## 1. Install
 
 Requirements: **Python 3.11+** and [`uv`](https://docs.astral.sh/uv/).
