@@ -73,14 +73,14 @@ def render_quiz_html(quiz: Quiz, theme_name: str = "circulatory", settings: Sett
             for j, c in enumerate(q.choices)
         )
         blocks.append(
-            f'<div class="q" id="q{i}"><div class="qtext">{i + 1}. {_html.escape(q.question)}</div>'
-            f'{opts}<div class="exp" id="exp{i}"></div></div>'
+            f'<fieldset class="q" id="q{i}"><legend class="qtext">{i + 1}. {_html.escape(q.question)}</legend>'
+            f'{opts}<div class="exp" id="exp{i}"></div></fieldset>'
         )
 
     css = (
         "body{font-family:'Segoe UI',system-ui,sans-serif;background:#f4f4f6;margin:0;padding:24px;color:#222;max-width:820px}"
-        "h1{color:PRIMARY}.q{background:#fff;border-radius:12px;padding:14px 16px;margin:12px 0;box-shadow:0 2px 8px rgba(0,0,0,.08)}"
-        ".qtext{font-weight:700;margin-bottom:8px}.opt{display:block;padding:6px 8px;border-radius:8px;margin:3px 0;cursor:pointer}"
+        "h1{color:PRIMARY}.q{background:#fff;border:0;border-radius:12px;padding:14px 16px;margin:12px 0;box-shadow:0 2px 8px rgba(0,0,0,.08)}"
+        ".qtext{font-weight:700;margin-bottom:8px;width:100%}.opt{display:block;padding:6px 8px;border-radius:8px;margin:3px 0;cursor:pointer}"
         ".opt:hover{background:#f0f0f3}.opt.correct{background:#e3f7e3;outline:1px solid #46a046}"
         ".opt.wrong{background:#fde8e8;outline:1px solid #d05050}"
         ".exp{display:none;font-size:13px;color:#666;margin-top:8px;font-style:italic}"
@@ -103,6 +103,6 @@ def render_quiz_html(quiz: Quiz, theme_name: str = "circulatory", settings: Sett
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         f"<title>{_html.escape(quiz.title)} — quiz</title><style>{css}</style></head><body>"
         f"<h1>{_html.escape(quiz.title)} — Quiz</h1>{''.join(blocks)}"
-        "<button onclick='check()'>Check answers</button><div id='score'></div>"
+        "<button onclick='check()'>Check answers</button><div id='score' aria-live='polite'></div>"
         f"<script>{js}</script></body></html>"
     )

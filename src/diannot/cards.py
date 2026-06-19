@@ -156,12 +156,21 @@ def render_deck_html(deck: Deck, theme_name: str = "circulatory", settings: Sett
         ".back{background:PRIMARY;color:#fff;transform:rotateY(180deg);font-size:13px}"
         ".meta{font-size:10px;opacity:.7;margin-top:8px;font-weight:400}"
     ).replace("PRIMARY", colors["primary"])
+    css += (
+        f".card:focus{{outline:3px solid {colors['primary']};outline-offset:3px}}"
+        "@media (prefers-reduced-motion: reduce){.inner{transition:none}}"
+    )
 
     cards_html = []
     for c in deck.cards:
         meta = f"p.{c.source_page}" if c.source_page else _html.escape(c.source or "")
         cards_html.append(
-            '<div class="card" onclick="this.classList.toggle(\'flipped\')"><div class="inner">'
+            '<div class="card" role="button" tabindex="0" '
+            'aria-label="Flashcard, activate to reveal the answer" '
+            'onclick="this.classList.toggle(\'flipped\')" '
+            'onkeydown="if(event.key===\'Enter\'||event.key===\' \')'
+            "{event.preventDefault();this.classList.toggle('flipped');}\">"
+            '<div class="inner">'
             f'<div class="face front">{_html.escape(c.front)}'
             f'{f"<div class=meta>{meta}</div>" if meta else ""}</div>'
             f'<div class="face back">{_html.escape(c.back)}</div></div></div>'
