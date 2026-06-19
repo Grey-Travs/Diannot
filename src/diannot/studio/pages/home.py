@@ -1,4 +1,4 @@
-"""Home / Library — browse the workspace, make/open notes."""
+"""Home / Library — browse the workspace, make/open notes, change folder."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,6 +29,28 @@ def _new_note(workspace: Path) -> None:
     ui.navigate.to(f"/note?path={quote(str(dest))}")
 
 
+def _change_folder_dialog(workspace: Path | None) -> None:
+    with ui.dialog() as dialog, ui.card().classes("p-4 gap-2"):
+        ui.label("Choose your notes folder").classes("text-subtitle1")
+        field = ui.input(label="Folder path", value=str(workspace or "")).classes("w-96")
+
+        def apply() -> None:
+            path = Path(field.value).expanduser()
+            if path.is_dir():
+                set_workspace(path)
+                dialog.close()
+                ui.navigate.to("/")
+            else:
+                ui.notify("That folder doesn't exist.", type="negative")
+
+        with ui.row().classes("justify-end gap-2 w-full"):
+            if SAMPLE_DIR.exists():
+                ui.button("Use sample", icon="folder_open",
+                          on_click=lambda: (set_workspace(SAMPLE_DIR), dialog.close(), ui.navigate.to("/"))).props("flat no-caps")
+            ui.button("Apply", icon="check", on_click=apply).props("color=primary no-caps")
+    dialog.open()
+
+
 @ui.page("/")
 def home_page() -> None:
     studio_layout("")
@@ -41,7 +63,10 @@ def home_page() -> None:
                           on_click=lambda: workspace and _new_note(workspace)).props("outline no-caps")
                 ui.button("Make notes from a file", icon="auto_awesome",
                           on_click=lambda: ui.navigate.to("/import")).props("color=primary no-caps")
-        ui.label(f"Folder: {workspace}" if workspace else "No folder selected").classes("text-caption text-grey")
+        with ui.row().classes("items-center gap-2"):
+            ui.label(f"Folder: {workspace}" if workspace else "No folder selected").classes("text-caption text-grey")
+            ui.button("Change folder", icon="folder",
+                      on_click=lambda: _change_folder_dialog(workspace)).props("flat dense no-caps")
 
         notes = list_notes(workspace) if workspace else []
         if not notes:
