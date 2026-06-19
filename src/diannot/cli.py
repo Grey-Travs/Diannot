@@ -292,6 +292,37 @@ def review(
     typer.secho("\nSession complete — progress saved.", fg="green")
 
 
+@app.command()
+def quiz(
+    note_path: Path = typer.Argument(..., exists=True, help="A note JSON."),
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Quiz JSON path (default: <note>.quiz.json)."),
+    count: int = typer.Option(6, "--count", "-n", help="Number of questions."),
+    theme: str = typer.Option("circulatory", "--theme", "-t", help="Theme for the HTML view."),
+    html: bool = typer.Option(True, "--html/--no-html", help="Write an interactive HTML quiz."),
+    model: Optional[str] = typer.Option(None, "--model", help="Override the model."),
+) -> None:
+    """Generate a multiple-choice quiz from a note (uses Claude)."""
+    from .quiz import generate_quiz, render_quiz_html
+
+    settings = Settings()
+    note = Note.model_validate_json(note_path.read_text(encoding="utf-8"))
+    typer.echo(f"Generating a {count}-question quiz with Claude ({model or settings.models.structure})…")
+    try:
+        q = generate_quiz(note, model=model, settings=settings, count=count)
+    except Exception as exc:
+        typer.secho(f"Quiz generation failed: {exc}", fg="red")
+        raise typer.Exit(1)
+
+    out = out or note_path.with_suffix(".quiz.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(q.model_dump_json(indent=2), encoding="utf-8")
+    typer.echo(f"Quiz: {len(q.questions)} questions -> {out}")
+    if html:
+        html_path = out.with_suffix(".html")
+        html_path.write_text(render_quiz_html(q, theme_name=theme, settings=settings), encoding="utf-8")
+        typer.echo(f"Quiz view -> {html_path}")
+
+
 @app.command(name="anki")
 def anki_export(
     deck_path: Path = typer.Argument(..., exists=True, help="A deck JSON (from `flashcards`)."),
