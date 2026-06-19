@@ -1,0 +1,20 @@
+{
+  "title": "Tissue Types",
+  "theme": "histology",
+  "pack": "study_notes",
+  "subject": "Histology",
+  "blocks": [
+    { "type": "banner", "text": "Tissue Types" },
+    { "type": "body", "text": "The human body has **four** primary tissue types." },
+    { "type": "term_definition", "term": "Epithelial tissue", "definition": "**covers** surfaces and lines cavities; forms **glands**." },
+    { "type": "term_definition", "term": "Connective tissue", "definition": "**supports** and binds; includes bone, blood, and adipose." },
+    { "type": "term_definition", "term": "Muscle tissue", "definition": "**contracts** to produce movement (skeletal, cardiac, smooth)." },
+    { "type": "term_definition", "term": "Nervous tissue", "definition": "**transmits** electrical signals; made of neurons and glia." },
+    {
+      "type": "callout",
+      "variant": "tutor_tip",
+      "title": "Tutor Tip",
+      "body": "Four tissues: **E**pithelial, **C**onnective, **M**uscle, **N**ervous."
+    }
+  ]
+}

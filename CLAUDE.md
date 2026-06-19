@@ -113,7 +113,9 @@ Plain files → git-friendly, portable, local-first.
 - **Phase 4 (done):** study features — flashcards (`flashcards`), spaced repetition
   (`review`, SM-2), Anki export (`anki`), AI quizzes (`quiz`), glossary (`glossary`),
   full-text search (`index`/`search`, SQLite FTS5).
-- Phase 5: polish (theme/plugin system, packaging, tests + CI, Docker, a11y, docs).
+- **Phase 5 (done):** pytest suite + ruff + GitHub Actions CI; packaging (wheel bundles
+  themes/packs/fonts) + Dockerfile; accessibility (keyboard flip-cards, quiz fieldsets);
+  docs (README + GUIDE.md) + a sample notebook.
 
 ## Conventions
 - Type hints + docstrings; small functions; minimal, well-chosen dependencies.

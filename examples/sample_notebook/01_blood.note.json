@@ -1,0 +1,33 @@
+{
+  "title": "Blood Basics",
+  "theme": "circulatory",
+  "pack": "study_notes",
+  "subject": "Hematology",
+  "blocks": [
+    { "type": "banner", "text": "Blood Basics", "subtitle": "Composition & Cells" },
+    { "type": "body", "text": "**Blood** is a connective tissue: about **55%** plasma and **45%** formed elements." },
+    { "type": "term_definition", "term": "Plasma", "definition": "the **liquid** matrix — mostly water with proteins, ions, and wastes." },
+    { "type": "term_definition", "term": "Erythrocyte", "definition": "a **red blood cell** that carries **hemoglobin** and oxygen." },
+    { "type": "term_definition", "term": "Leukocyte", "definition": "a **white blood cell** that defends against infection." },
+    { "type": "term_definition", "term": "Thrombocyte", "definition": "a **platelet** fragment that drives **hemostasis**." },
+    {
+      "type": "table",
+      "headers": ["Cell", "Role", "Lifespan"],
+      "rows": [
+        ["**RBC**", "Carry **oxygen**", "~120 days"],
+        ["**WBC**", "**Immune** defense", "Hours–years"],
+        ["**Platelet**", "**Clotting**", "~8–10 days"]
+      ],
+      "caption": "The formed elements of blood."
+    },
+    {
+      "type": "callout",
+      "variant": "key_points",
+      "title": "Key Points",
+      "items": [
+        "**Hematocrit** is the percentage of blood volume that is RBCs.",
+        "**Hemostasis** stops bleeding via vascular spasm, a platelet plug, and coagulation."
+      ]
+    }
+  ]
+}

@@ -10,7 +10,11 @@ This is an open-source, local-first tool: **you bring your own Claude credential
 your notes live as plain JSON files on disk.
 
 ## Status
-Phase 1 (the core loop + the look). See [CLAUDE.md](CLAUDE.md) for the full design system and roadmap.
+Phases 1–5 complete: ingest (text/PDF/image/Office/scanned) → AI-structured blocks →
+themed HTML/PDF, an interactive editor, study features (flashcards/SRS/Anki/quizzes/
+glossary/search), tests + CI, packaging and Docker.
+
+**New here? Read the [User Guide](GUIDE.md).** See [CLAUDE.md](CLAUDE.md) for the design system.
 
 ## Requirements
 - Python 3.11+ (the project pins 3.13 via `.python-version`)
