@@ -24,6 +24,14 @@ A first-run tour walks you through it. Studio has everything in one place:
 - **Search** — find anything across your notes.
 - **Settings** — paste a Claude key (or sign in to the Claude app) and pick defaults.
 
+**Make a double-click app (no terminal):**
+```bash
+uv sync
+uv run pyinstaller diannot_studio.spec   # -> dist/DiannotStudio/DiannotStudio.exe
+```
+This produces a one-folder Windows app you can hand to anyone — double-clicking opens the
+window. (Chromium for PDF/PNG export installs itself the first time it's used.)
+
 The rest of this guide covers the underlying commands (handy for automation).
 
 ## 1. Install

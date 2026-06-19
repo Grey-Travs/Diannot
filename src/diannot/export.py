@@ -6,7 +6,31 @@ Requires a one-time ``playwright install chromium``.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+
+def _ensure_chromium() -> None:
+    """Make sure Chromium is available; download it on first use (packaged app)."""
+    from playwright.sync_api import sync_playwright
+
+    try:
+        with sync_playwright() as p:
+            exe = p.chromium.executable_path
+        if exe and os.path.exists(exe):
+            return
+    except Exception:
+        pass
+    try:
+        import subprocess
+
+        from playwright._impl._driver import compute_driver_executable, get_driver_env
+
+        driver = compute_driver_executable()
+        cmd = list(driver) if isinstance(driver, (list, tuple)) else [driver]
+        subprocess.run([*cmd, "install", "chromium"], env=get_driver_env(), check=False)
+    except Exception:
+        pass
 
 
 def _settle(page, html_path: Path) -> None:
@@ -18,6 +42,7 @@ def _settle(page, html_path: Path) -> None:
 
 def html_to_pdf(html_path: Path | str, pdf_path: Path | str) -> Path:
     """Render an HTML file to A4 PDF. Page margins come from the CSS ``@page`` rule."""
+    _ensure_chromium()
     from playwright.sync_api import sync_playwright
 
     html_path = Path(html_path).resolve()
@@ -41,6 +66,7 @@ def html_to_pdf(html_path: Path | str, pdf_path: Path | str) -> Path:
 
 def html_to_png(html_path: Path | str, png_path: Path | str, width: int = 920) -> Path:
     """Render an HTML file to a full-page PNG preview (uses screen styles)."""
+    _ensure_chromium()
     from playwright.sync_api import sync_playwright
 
     html_path = Path(html_path).resolve()

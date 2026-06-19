@@ -26,6 +26,13 @@ Studio wraps everything — a notes Library, an Import wizard, the block Editor 
 preview + PDF/PNG export, a Study hub (flashcards · spaced-repetition review · quizzes ·
 glossary), Search, and Settings — with a beginner-friendly first-run tour.
 
+**Make a double-click app** (no terminal for end users):
+```bash
+uv sync                                  # includes pyinstaller (dev group)
+uv run pyinstaller diannot_studio.spec   # -> dist/DiannotStudio/DiannotStudio.exe
+```
+The packaged app ships without Chromium; it downloads itself the first time you export a PDF/PNG.
+
 ## Requirements
 - Python 3.11+ (the project pins 3.13 via `.python-version`)
 - [`uv`](https://docs.astral.sh/uv/)

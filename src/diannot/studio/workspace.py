@@ -7,15 +7,22 @@ provide sensible fallbacks so the Library is never empty.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from nicegui import app
 
 from ..models import Note
 
-# repo_root/examples/sample_notebook  (studio/workspace.py -> studio -> diannot -> src -> repo)
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-SAMPLE_DIR = _REPO_ROOT / "examples" / "sample_notebook"
+
+def _base_dir() -> Path:
+    """Root that holds ``examples/`` — the PyInstaller bundle when frozen, else the repo."""
+    if getattr(sys, "frozen", False):  # PyInstaller onedir
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return Path(__file__).resolve().parents[3]  # studio -> diannot -> src -> repo
+
+
+SAMPLE_DIR = _base_dir() / "examples" / "sample_notebook"
 
 _INITIAL = {"workspace": None}
 

@@ -1,0 +1,67 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""PyInstaller spec for Diannot Studio — a one-folder Windows desktop app.
+
+Build:  uv run pyinstaller diannot_studio.spec --noconfirm
+Result: dist/DiannotStudio/DiannotStudio.exe  (double-click → native window)
+
+Ships WITHOUT Chromium (downloaded on first PDF/PNG export). Bundles the Claude
+Agent SDK's CLI, NiceGUI assets, pywebview's WebView2 DLLs, and the diannot
+package data (themes/packs/fonts) + sample notebook.
+"""
+from PyInstaller.utils.hooks import collect_all, collect_data_files
+
+datas, binaries, hiddenimports = [], [], []
+
+# Full collection (code + data + binaries) for the frameworks.
+for pkg in ("nicegui", "pywebview", "playwright"):
+    d, b, h = collect_all(pkg)
+    datas += d
+    binaries += b
+    hiddenimports += h
+
+# Data-only collection: keeps _bundled/claude.exe, diannot themes/packs/fonts, certs.
+for pkg in ("claude_agent_sdk", "diannot", "certifi"):
+    datas += collect_data_files(pkg)
+
+# Repo-root sample notebook (resolved at runtime via sys._MEIPASS).
+datas += [("examples/sample_notebook", "examples/sample_notebook")]
+
+hiddenimports += [
+    "uvicorn", "uvicorn.logging", "uvicorn.loops", "uvicorn.loops.auto",
+    "uvicorn.loops.asyncio", "uvicorn.protocols", "uvicorn.protocols.http",
+    "uvicorn.protocols.http.auto", "uvicorn.protocols.http.h11_impl",
+    "uvicorn.protocols.websockets", "uvicorn.protocols.websockets.auto",
+    "uvicorn.protocols.websockets.websockets_impl", "uvicorn.lifespan",
+    "uvicorn.lifespan.on", "fastapi", "starlette", "sse_starlette", "anyio",
+    "clr", "clr_loader", "pythonnet",
+    "webview.platforms.winforms", "webview.platforms.edgechromium",
+    "engineio.async_drivers.asgi", "websockets", "websockets.legacy",
+    "h11", "watchfiles",
+]
+
+excludes = [
+    "tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6", "qtpy",
+    "gi", "gtk", "matplotlib", "IPython", "notebook", "pytest",
+]
+
+a = Analysis(
+    ["studio_main.py"],
+    pathex=["src"],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
+    excludes=excludes,
+    noarchive=False,
+)
+pyz = PYZ(a.pure)
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="DiannotStudio",
+    console=False,  # windowed app — no console window
+    disable_windowed_traceback=False,
+    icon=None,
+)
+coll = COLLECT(exe, a.binaries, a.datas, name="DiannotStudio")
