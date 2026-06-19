@@ -11,7 +11,15 @@ from pathlib import Path
 from nicegui import ui
 
 from . import previews  # noqa: F401  — registers /preview routes
-from .pages import help, home, import_, note, search, settings, study  # noqa: F401  — registers @ui.page
+from .pages import (  # noqa: F401  — registers @ui.page
+    help,
+    home,
+    import_,
+    note,
+    search,
+    settings,
+    study,
+)
 from .workspace import set_initial_workspace
 
 
