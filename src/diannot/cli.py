@@ -293,6 +293,41 @@ def review(
 
 
 @app.command()
+def index(
+    source: Path = typer.Argument(..., exists=True, help="A note JSON or a notebook folder."),
+    db: Path = typer.Option(Path(".diannot_index.db"), "--db", help="Index database path."),
+) -> None:
+    """Build/refresh the full-text search index (SQLite FTS5)."""
+    from .search import build_index
+
+    rows = build_index(source, db)
+    typer.echo(f"Indexed {rows} blocks -> {db}")
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Full-text query (FTS5 syntax)."),
+    db: Path = typer.Option(Path(".diannot_index.db"), "--db", help="Index database path."),
+    limit: int = typer.Option(10, "--limit", "-n", help="Max results."),
+) -> None:
+    """Search indexed notes (run `diannot index` first)."""
+    from .search import search as run_search
+
+    try:
+        results = run_search(query, db, limit)
+    except FileNotFoundError as exc:
+        typer.secho(str(exc), fg="red")
+        raise typer.Exit(1)
+    if not results:
+        typer.echo("No matches.")
+        return
+    for r in results:
+        loc = f" (p.{r['source_page']})" if r["source_page"] else ""
+        typer.echo(f"{typer.style(r['note_title'], bold=True)} · {r['block_type']}{loc}")
+        typer.echo(f"   {r['snippet']}")
+
+
+@app.command()
 def glossary(
     source: Path = typer.Argument(..., exists=True, help="A note JSON or a notebook folder."),
     out: Optional[Path] = typer.Option(None, "--out", "-o", help="Glossary note JSON path."),

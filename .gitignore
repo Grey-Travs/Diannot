@@ -17,6 +17,10 @@ output/
 .env
 *.local.toml
 
+# Full-text search index
+.diannot_index.db
+*.diannot_index.db
+
 # OS / editor
 .DS_Store
 Thumbs.db
