@@ -98,6 +98,7 @@ class ImageBlock(_Block):
     alt: Optional[str] = None
     caption: Optional[str] = None
     source_credit: Optional[str] = None
+    width: Optional[int] = Field(default=None, ge=10, le=100, description="Display width as % of the column (10–100); None = 100%.")
 
 
 class DiagramBlock(_Block):

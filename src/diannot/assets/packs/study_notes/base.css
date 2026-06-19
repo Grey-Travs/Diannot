@@ -22,8 +22,10 @@ body {
 }
 
 .page {
-  column-count: 2;
-  column-gap: 26px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 26px;
+  align-content: start;
   max-width: 920px;
   margin: 0 auto;
   padding: 8px 4px;
@@ -40,10 +42,15 @@ body {
   }
 }
 
-.full { column-span: all; }
+/* Explicit two-column placement. Default: every block spans full width; set a block
+   to Left (col1) / Right (col2) to build a side-by-side row. */
+.page > * { grid-column: 1 / -1; }
+.lay-col1, .col1 { grid-column: 1; }
+.lay-col2, .col2 { grid-column: 2; }
+.lay-full, .full { grid-column: 1 / -1; }
 
 /* ---- Banner (poster header) ---- */
-.banner { column-span: all; text-align: center; margin: 0 0 16px; break-after: avoid; }
+.banner { grid-column: 1 / -1; text-align: center; margin: 0 0 16px; break-after: avoid; }
 .banner-imgs { display: flex; justify-content: center; gap: 8px; margin-bottom: 4px; }
 .banner-imgs img { height: 66px; object-fit: contain; }
 .banner h1 {

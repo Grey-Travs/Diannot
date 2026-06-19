@@ -19,6 +19,7 @@ from ...render import render_note_html
 from ..background import run_blocking
 from ..layout import studio_layout
 from ..previews import LIVE
+from ..workspace import delete_note
 
 _SORTABLE_INIT = (
     "const el=document.querySelector('.blocklist');"
@@ -145,6 +146,16 @@ def note_page(path: str = "") -> None:
             _bind_text(b, "caption", "Caption", area=False)
             _bind_text(b, "source_credit", "Source credit", area=False)
             ui.upload(on_upload=lambda e, b=b: _upload(b, e), auto_upload=True).props("accept=image/*").classes("w-full")
+            ui.label("Image width (%)").classes("text-caption text-grey")
+            width_slider = ui.slider(min=10, max=100, value=b.width or 100).props("label-always").classes("w-full")
+            def _set_width(e, b=b) -> None:
+                try:
+                    v = int(e.args)
+                except (TypeError, ValueError):
+                    v = b.width or 100
+                b.width = None if v >= 100 else v
+                refresh()
+            width_slider.on("change", _set_width)
         elif t == "list":
             ui.switch("Ordered").bind_value(b, "ordered").on_value_change(refresh)
             items = ui.textarea(label="Items (one per line)", value="\n".join(it.text for it in b.items)).classes("w-full")
@@ -172,7 +183,8 @@ def note_page(path: str = "") -> None:
                 refresh()
             citems.on_value_change(_set_citems)
         with ui.row().classes("items-center gap-4"):
-            ui.select(["auto", "full"], label="Layout").bind_value(b, "layout").on_value_change(refresh)
+            ui.select({"auto": "Auto", "col1": "Left", "col2": "Right", "full": "Full width"},
+                      label="Layout").bind_value(b, "layout").on_value_change(refresh)
             ui.select(["high", "medium", "low"], label="Confidence", clearable=True).bind_value(b, "confidence").on_value_change(refresh)
 
     def _card(i: int, b) -> None:
@@ -187,6 +199,16 @@ def note_page(path: str = "") -> None:
                     ui.button(icon="delete", on_click=lambda _, i=i: delete(i)).props("flat dense color=negative")
             _fields(b)
 
+    def _confirm_delete_note() -> None:
+        with ui.dialog() as dlg, ui.card().classes("p-4 gap-2"):
+            ui.label(f"Delete “{note.title}”?").classes("text-subtitle1")
+            ui.label("This also removes its flashcards, quiz, glossary and images.").classes("text-caption text-grey")
+            with ui.row().classes("justify-end gap-2 w-full"):
+                ui.button("Cancel", on_click=dlg.close).props("flat no-caps")
+                ui.button("Delete", icon="delete",
+                          on_click=lambda: (delete_note(str(note_path)), ui.navigate.to("/"))).props("color=negative no-caps")
+        dlg.open()
+
     # ---- toolbar ----
     with ui.row().classes("items-center gap-2 w-full p-2"):
         ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/")).props("flat round dense")
@@ -197,6 +219,7 @@ def note_page(path: str = "") -> None:
         ui.button("Save", icon="save", on_click=save).props("color=positive no-caps")
         ui.button("PDF", icon="picture_as_pdf", on_click=lambda: export("pdf")).props("outline no-caps")
         ui.button("PNG", icon="image", on_click=lambda: export("png")).props("outline no-caps")
+        ui.button(icon="delete", on_click=_confirm_delete_note).props("outline color=negative no-caps")
 
     # ---- editor + preview ----
     with ui.row().classes("w-full no-wrap gap-4 px-2"):

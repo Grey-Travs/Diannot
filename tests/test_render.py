@@ -1,7 +1,27 @@
 """Rendering: inline markdown, theme/pack injection, offline fonts."""
 from diannot.config import Settings
-from diannot.models import BannerBlock, BodyBlock, Note, TableBlock, TermDefinitionBlock
+from diannot.models import BannerBlock, BodyBlock, ImageBlock, Note, TableBlock, TermDefinitionBlock
 from diannot.render import build_font_css, inline_md, load_theme, render_note_html
+
+
+def test_grid_layout_and_image_width():
+    note = Note(
+        title="T",
+        theme="circulatory",
+        blocks=[
+            BodyBlock(text="left", layout="col1"),
+            BodyBlock(text="right", layout="col2"),
+            BannerBlock(text="B"),  # default layout="full"
+            ImageBlock(src="x.png", width=50),
+        ],
+    )
+    html = render_note_html(note)
+    assert "display: grid" in html and "grid-template-columns: 1fr 1fr" in html
+    assert "lay-col1" in html and "lay-col2" in html and "lay-full" in html
+    assert "column-count" not in html  # multi-column engine removed
+    assert 'style="width: 50%"' in html
+    h2 = render_note_html(note, pack="pro_infographic")
+    assert "display: grid" in h2 and "lay-col1" in h2 and 'style="width: 50%"' in h2
 
 
 def _note():

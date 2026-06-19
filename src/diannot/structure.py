@@ -81,7 +81,11 @@ RULES:
 5. Convert bulleted/numbered runs into list blocks (preserve nesting).
 6. Bold the testable terms and key phrases (anatomical names, key processes, numeric
    facts) with **double asterisks** in body, definitions, list items and table cells.
-7. Do not set theme/pack/layout — the app controls those.
+7. LAYOUT (two-column grid): set each block's "layout" — "col1" (left half) and "col2" (right
+   half) for side-by-side content (emit a "col1" block immediately followed by its paired "col2"
+   block to fill one row); "full" for wide content (banner, tables, large callouts); "auto"
+   (= full width) otherwise. Image blocks may also set "width" (10–100, percent of the column).
+   Do NOT set theme or pack — the app controls those.
 8. If you are given page IMAGES: transcribe ALL visible text faithfully and in logical
    reading order (reconstruct across columns). For photographs, diagrams or micrographs
    you cannot transcribe, capture them briefly as a body note or an image caption that

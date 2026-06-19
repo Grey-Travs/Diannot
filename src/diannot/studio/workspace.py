@@ -7,6 +7,7 @@ provide sensible fallbacks so the Library is never empty.
 """
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -58,3 +59,20 @@ def list_notes(workspace: Path | str) -> list[tuple[str, Note]]:
         except Exception:
             continue  # skip non-note JSON
     return notes
+
+
+def delete_note(note_path: str | Path) -> None:
+    """Delete a note and its sidecars (deck/quiz/glossary/anki + images). Best-effort."""
+    p = Path(note_path)
+    name = p.name
+    # Use removesuffix so "X.glossary.note.json" -> "X.glossary" (Path.stem would be wrong).
+    base = name[: -len(".note.json")] if name.endswith(".note.json") else p.stem
+    for fname in (name, f"{base}.deck.json", f"{base}.quiz.json",
+                  f"{base}.glossary.note.json", f"{base}.deck.apkg"):
+        try:
+            (p.parent / fname).unlink(missing_ok=True)
+        except OSError:
+            pass
+    # The editor creates the assets dir from note_path.stem -> "X.note.assets".
+    for dname in {f"{name[: -len('.json')]}.assets", f"{base}.assets"}:
+        shutil.rmtree(p.parent / dname, ignore_errors=True)

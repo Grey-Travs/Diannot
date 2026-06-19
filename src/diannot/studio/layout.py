@@ -19,13 +19,17 @@ NAV = [
 
 def studio_layout(active: str = "") -> None:
     """Draw the header + left drawer. Page content is added by the caller afterwards."""
-    with ui.header().classes("items-center justify-between"):
-        with ui.row().classes("items-center gap-2"):
-            ui.icon("menu_book").classes("text-2xl")
-            ui.label("Diannot Studio").classes("text-h6")
-    with ui.left_drawer(value=True).classes("bg-grey-2").props("width=220"):
+    # behavior=desktop keeps the drawer pinned (Quasar otherwise auto-hides it on narrow
+    # widths with no way back); the header hamburger is the deliberate show/hide.
+    drawer = ui.left_drawer(value=True).classes("bg-grey-2").props("width=220 behavior=desktop bordered")
+    with drawer:
         for label, route, icon in NAV:
             btn = ui.button(label, icon=icon, on_click=lambda r=route: ui.navigate.to(r))
             btn.props("flat align=left no-caps").classes("w-full")
             if route.strip("/") == active:
                 btn.props("color=primary")
+    with ui.header().classes("items-center justify-between"):
+        with ui.row().classes("items-center gap-2"):
+            ui.button(icon="menu", on_click=drawer.toggle).props("flat round dense color=white")
+            ui.icon("menu_book").classes("text-2xl")
+            ui.label("Diannot Studio").classes("text-h6")

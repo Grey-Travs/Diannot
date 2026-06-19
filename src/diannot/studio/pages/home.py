@@ -9,7 +9,24 @@ from nicegui import ui
 from ...models import BannerBlock, BodyBlock, Note, ScriptHeadingBlock
 from ..layout import studio_layout
 from ..onboarding import maybe_first_run
-from ..workspace import SAMPLE_DIR, current_workspace, list_notes, set_workspace
+from ..workspace import SAMPLE_DIR, current_workspace, delete_note, list_notes, set_workspace
+
+
+def _confirm_delete(path: str, title: str) -> None:
+    with ui.dialog() as dialog, ui.card().classes("p-4 gap-2"):
+        ui.label(f"Delete “{title}”?").classes("text-subtitle1")
+        ui.label("This also removes its flashcards, quiz, glossary and images.").classes("text-caption text-grey")
+
+        def do_delete() -> None:
+            delete_note(path)
+            dialog.close()
+            ui.notify("Note deleted.", type="positive")
+            ui.navigate.to("/")
+
+        with ui.row().classes("justify-end gap-2 w-full"):
+            ui.button("Cancel", on_click=dialog.close).props("flat no-caps")
+            ui.button("Delete", icon="delete", on_click=do_delete).props("color=negative no-caps")
+    dialog.open()
 
 
 def _new_note(workspace: Path) -> None:
@@ -89,3 +106,5 @@ def home_page() -> None:
                                       on_click=lambda p=path: ui.navigate.to(f"/note?path={quote(p)}")).props("flat dense no-caps")
                             ui.button("Study", icon="school",
                                       on_click=lambda p=path: ui.navigate.to(f"/study?path={quote(p)}")).props("flat dense no-caps")
+                            ui.button(icon="delete",
+                                      on_click=lambda p=path, t=note.title: _confirm_delete(p, t)).props("flat dense color=negative no-caps")

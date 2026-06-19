@@ -5,12 +5,27 @@ from pydantic import ValidationError
 from diannot.models import (
     BannerBlock,
     BodyBlock,
+    ImageBlock,
     ListBlock,
     ListItem,
     Note,
     TableBlock,
     TermDefinitionBlock,
 )
+
+
+def test_image_width_optional_and_bounded():
+    assert ImageBlock(src="x").width is None
+    assert ImageBlock(src="x", width=50).width == 50
+    with pytest.raises(ValidationError):
+        ImageBlock(src="x", width=5)
+    with pytest.raises(ValidationError):
+        ImageBlock(src="x", width=200)
+
+
+def test_column_layout_values_accepted():
+    assert BodyBlock(text="x", layout="col1").layout == "col1"
+    assert BodyBlock(text="x", layout="col2").layout == "col2"
 
 
 def test_note_roundtrip():

@@ -7,7 +7,8 @@
 </{{ 'ol' if ordered else 'ul' }}>
 {% endmacro %}
 {% macro render_block(b) %}
-{% set cls = (('full ' if b.layout == 'full' else '') ~ ('flag-' ~ b.confidence if b.confidence in ['low', 'medium'] else '')) | trim %}
+{% set _lay = {'col1': 'lay-col1', 'col2': 'lay-col2', 'full': 'lay-full'}.get(b.layout, '') %}
+{% set cls = (_lay ~ ' ' ~ ('flag-' ~ b.confidence if b.confidence in ['low', 'medium'] else '')) | trim %}
 {% if b.type == 'banner' %}
   <header class="banner {{ cls }}">
     {% if b.images %}<div class="banner-imgs">{% for im in b.images %}<img src="{{ im }}" alt="">{% endfor %}</div>{% endif %}
@@ -36,7 +37,7 @@
   </figure>
 {% elif b.type == 'image' %}
   <figure class="img {{ cls }}">
-    <img src="{{ b.src }}" alt="{{ b.alt or '' }}">
+    <img src="{{ b.src }}" alt="{{ b.alt or '' }}"{% if b.width %} style="width: {{ b.width }}%"{% endif %}>
     {% if b.caption or b.source_credit %}<figcaption>{{ b.caption or '' }}{% if b.source_credit %} <span class="credit">{{ b.source_credit }}</span>{% endif %}</figcaption>{% endif %}
   </figure>
 {% elif b.type == 'diagram' %}
