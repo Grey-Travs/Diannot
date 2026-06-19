@@ -107,12 +107,12 @@ def note_page(path: str = "") -> None:
         except Exception as exc:
             ui.notify(f"Export failed: {exc}", type="negative")
 
-    def _upload(b, e) -> None:
+    async def _upload(b, e) -> None:
         assets_dir.mkdir(parents=True, exist_ok=True)
-        dest = assets_dir / e.name
-        dest.write_bytes(e.content.read())
+        dest = assets_dir / e.file.name
+        dest.write_bytes(await e.file.read())
         b.src = f"/file?path={quote(str(dest.resolve()))}"
-        ui.notify(f"Placed image {e.name}", type="positive")
+        ui.notify(f"Placed image {e.file.name}", type="positive")
         rebuild()
 
     def _bind_text(b, attr: str, label: str, area: bool = True) -> None:

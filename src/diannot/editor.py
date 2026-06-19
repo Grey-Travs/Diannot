@@ -119,11 +119,11 @@ def run_editor(note_path: Path | str, host: str = "127.0.0.1", port: int = 8080,
 
         ui.on("block_reorder", on_reorder)
 
-        def _upload(b: ImageBlock, e) -> None:
-            dest = assets_dir / e.name
-            dest.write_bytes(e.content.read())
-            b.src = f"/assets/{e.name}"
-            ui.notify(f"Placed image {e.name}", type="positive")
+        async def _upload(b: ImageBlock, e) -> None:
+            dest = assets_dir / e.file.name
+            dest.write_bytes(await e.file.read())
+            b.src = f"/assets/{e.file.name}"
+            ui.notify(f"Placed image {e.file.name}", type="positive")
             rebuild()
 
         def _bind_text(b, attr: str, label: str, area: bool = True) -> None:
