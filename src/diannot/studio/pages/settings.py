@@ -74,3 +74,28 @@ def settings_page() -> None:
                 ui.notify("Saved to diannot.toml — restart Studio to apply everywhere.", type="positive")
 
             ui.button("Save defaults", icon="save", on_click=save_defaults).props("color=primary no-caps")
+
+        # ---- Create a theme ----
+        with ui.card().classes("p-4 w-full gap-2"):
+            ui.label("Create a theme").classes("text-subtitle1 text-bold")
+            ui.label("Pick a primary and accent color — Diannot generates the full palette and "
+                     "saves it as a new theme you can use right away.").classes("text-caption text-grey")
+            theme_name = ui.input(label="Theme name", value="My Theme").classes("w-60")
+            with ui.row().classes("gap-4 items-center"):
+                primary_color = ui.color_input(label="Primary", value="#6B4B90")
+                accent_color = ui.color_input(label="Accent", value="#E7799B")
+
+            def create_theme() -> None:
+                from ...themegen import generate_theme, save_theme
+
+                try:
+                    dest = save_theme(
+                        generate_theme(theme_name.value, primary_color.value, accent_color.value),
+                        settings.paths.themes_dir,
+                    )
+                except Exception as exc:
+                    ui.notify(f"Couldn't create theme: {exc}", type="negative")
+                    return
+                ui.notify(f"Saved theme “{dest.stem}”. Pick it from any Theme dropdown.", type="positive")
+
+            ui.button("Generate & Save", icon="palette", on_click=create_theme).props("color=primary no-caps")

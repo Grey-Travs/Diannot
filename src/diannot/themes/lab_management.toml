@@ -1,0 +1,25 @@
+# Laboratory Management — purple primary with a soft coral-pink accent.
+name = "Laboratory Management"
+
+[colors]
+primary = "#6B4B90"        # violet — script headings, subheadings, table header
+primary_dark = "#57357D"   # deep violet — bold key terms, banner stroke
+accent = "#E7799B"         # soft coral-pink — dashes, secondary accents
+accent_soft = "#EFE9F7"    # pale lavender — soft fills
+ink = "#2C2638"            # body text (purple-tinted near-black)
+page = "#FFFFFF"
+
+banner_fill = "#FFFFFF"
+banner_stroke = "#57357D"
+banner_shadow = "#BAA8D6"
+
+table_head_bg = "#6B4B90"
+table_head_ink = "#FFFFFF"
+table_zebra = "#F3EFF8"
+
+callout_tip_bg = "#FBEEF3"
+callout_tip_border = "#E7799B"
+callout_key_bg = "#F4EFFA"
+callout_key_border = "#6B4B90"
+callout_warn_bg = "#FFF6E6"
+callout_warn_border = "#E0A100"
