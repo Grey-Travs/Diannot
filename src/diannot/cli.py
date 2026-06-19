@@ -293,6 +293,35 @@ def review(
 
 
 @app.command()
+def glossary(
+    source: Path = typer.Argument(..., exists=True, help="A note JSON or a notebook folder."),
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Glossary note JSON path."),
+    title: str = typer.Option("Glossary", "--title", help="Glossary title."),
+    theme: str = typer.Option("histology", "--theme", "-t", help="Color theme."),
+    pack: str = typer.Option("study_notes", "--pack", help="Style pack."),
+    do_render: bool = typer.Option(True, "--render/--no-render", help="Render the glossary to HTML."),
+    pdf: bool = typer.Option(False, "--pdf", help="With --render: also export PDF."),
+) -> None:
+    """Collect term-definitions across notes into a styled, alphabetized glossary."""
+    from .glossary import build_glossary, load_notes
+
+    settings = Settings()
+    notes = load_notes(source)
+    if not notes:
+        typer.secho("No notes found.", fg="red")
+        raise typer.Exit(1)
+    glossary_note = build_glossary(notes, title=title, theme=theme, pack=pack)
+    n_terms = sum(1 for b in glossary_note.blocks if b.type == "term_definition")
+
+    out = out or (source / "glossary.note.json" if source.is_dir() else source.with_suffix(".glossary.json"))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(glossary_note.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
+    typer.echo(f"Glossary: {n_terms} terms from {len(notes)} note(s) -> {out}")
+    if do_render:
+        _write_render(glossary_note, settings, out.stem, theme, pdf, False, pack=pack)
+
+
+@app.command()
 def quiz(
     note_path: Path = typer.Argument(..., exists=True, help="A note JSON."),
     out: Optional[Path] = typer.Option(None, "--out", "-o", help="Quiz JSON path (default: <note>.quiz.json)."),
