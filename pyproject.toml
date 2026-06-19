@@ -23,6 +23,8 @@ dependencies = [
 ocr = ["pytesseract>=0.3.10", "pillow>=10.0"]
 # Interactive editor (Phase 3).
 editor = ["nicegui>=2.0"]
+# Anki .apkg export (Phase 4).
+anki = ["genanki>=0.13"]
 
 [project.scripts]
 diannot = "diannot.cli:app"

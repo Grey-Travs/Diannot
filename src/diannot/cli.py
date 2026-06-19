@@ -292,6 +292,26 @@ def review(
     typer.secho("\nSession complete — progress saved.", fg="green")
 
 
+@app.command(name="anki")
+def anki_export(
+    deck_path: Path = typer.Argument(..., exists=True, help="A deck JSON (from `flashcards`)."),
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Output .apkg (default: <deck>.apkg)."),
+) -> None:
+    """Export a flashcard deck to an Anki .apkg package (needs the 'anki' extra)."""
+    try:
+        import genanki  # noqa: F401
+    except ImportError:
+        typer.secho("Anki export needs the 'anki' extra:  uv sync --extra anki", fg="red")
+        raise typer.Exit(1)
+    from .anki import export_apkg
+    from .cards import load_deck
+
+    deck = load_deck(deck_path)
+    out = out or deck_path.with_suffix(".apkg")
+    export_apkg(deck, out)
+    typer.echo(f"Anki deck: {len(deck.cards)} cards -> {out}")
+
+
 @app.command()
 def edit(
     note_path: Path = typer.Argument(..., exists=True, help="Note JSON to edit."),
