@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nicegui import ui
+from nicegui import app, ui
 
 from ...config import Settings
 from ..background import run_blocking
@@ -20,6 +20,12 @@ def settings_page() -> None:
 
     with ui.column().classes("w-full p-4 gap-4 max-w-2xl"):
         ui.label("Settings").classes("text-h5")
+
+        # ---- Appearance ----
+        with ui.card().classes("p-4 w-full gap-2"):
+            ui.label("Appearance").classes("text-subtitle1 text-bold")
+            ui.switch("Dark mode").bind_value(app.storage.general, "dark")
+            ui.label("Violet theme. Toggle a dark or light look — it's remembered.").classes("text-caption text-grey")
 
         # ---- Claude connection ----
         with ui.card().classes("p-4 w-full gap-2"):

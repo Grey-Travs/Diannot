@@ -6,7 +6,7 @@ because they need a file ``path``.
 """
 from __future__ import annotations
 
-from nicegui import ui
+from nicegui import app, ui
 
 NAV = [
     ("Home", "/", "home"),
@@ -19,9 +19,14 @@ NAV = [
 
 def studio_layout(active: str = "") -> None:
     """Draw the header + left drawer. Page content is added by the caller afterwards."""
+    # App-wide brand colors (violet primary + soft coral-pink accent) and remembered
+    # dark/light mode (a Settings switch binds to the same storage key).
+    app.storage.general.setdefault("dark", False)
+    ui.colors(primary="#6B4B90", secondary="#E7799B", accent="#E7799B")
+    ui.dark_mode().bind_value(app.storage.general, "dark")
     # behavior=desktop keeps the drawer pinned (Quasar otherwise auto-hides it on narrow
     # widths with no way back); the header hamburger is the deliberate show/hide.
-    drawer = ui.left_drawer(value=True).classes("bg-grey-2").props("width=220 behavior=desktop bordered")
+    drawer = ui.left_drawer(value=True).props("width=220 behavior=desktop bordered")
     with drawer:
         for label, route, icon in NAV:
             btn = ui.button(label, icon=icon, on_click=lambda r=route: ui.navigate.to(r))
