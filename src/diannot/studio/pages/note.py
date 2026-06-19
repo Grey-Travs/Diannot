@@ -1,8 +1,11 @@
 """Note page — the full block editor with live preview + export (per-client).
 
-Refactored from ``diannot.editor`` to: (1) hold per-tab state in page-local
-closures + a live-note token (so multiple notes open at once), (2) preview UNSAVED
-edits via ``/preview/live?token=``, and (3) export PDF/PNG off the event loop.
+Blocks are shown as COMPACT rows (a one-line summary + a Left/Right/Full toggle +
+actions); click a row to expand its full editor. Left/Right blocks sit side-by-side
+in the list, mirroring the rendered two-column page. Drag the handle to reorder.
+
+Per-tab state lives in page-local closures + a live-note token, so multiple notes can
+be open at once and the preview (``/preview/live?token=``) reflects UNSAVED edits.
 """
 from __future__ import annotations
 
@@ -21,11 +24,43 @@ from ..layout import studio_layout
 from ..previews import LIVE
 from ..workspace import delete_note
 
+# Reorder via SortableJS (handle-scoped); the container persists across rebuild().
 _SORTABLE_INIT = (
     "const el=document.querySelector('.blocklist');"
     "if(el&&!el._sortable){el._sortable=Sortable.create(el,{handle:'.drag-handle',"
     "animation:150,onEnd:e=>emitEvent('block_reorder',{oldIndex:e.oldIndex,newIndex:e.newIndex})});}"
 )
+
+_ICONS = {
+    "banner": "flag", "script_heading": "title", "subheading": "subtitles", "body": "notes",
+    "term_definition": "sticky_note_2", "list": "format_list_bulleted", "table": "grid_on",
+    "image": "image", "diagram": "schema", "callout": "campaign", "quote": "format_quote",
+}
+
+
+def _snippet(b) -> str:
+    """A one-line summary of a block for the collapsed row."""
+    t = b.type
+    if t in ("banner", "script_heading", "subheading", "body", "quote"):
+        s = getattr(b, "text", "") or ""
+    elif t == "term_definition":
+        s = f"{b.term} — {b.definition}"
+    elif t == "list":
+        s = (b.items[0].text if b.items else "") + (f"  (+{len(b.items) - 1})" if len(b.items) > 1 else "")
+    elif t == "table":
+        s = f"table {len(b.rows)}×{len(b.headers)}"
+    elif t == "image":
+        s = b.caption or b.src or "image"
+    elif t == "diagram":
+        s = b.caption or "diagram"
+    elif t == "callout":
+        s = b.title or b.variant
+    else:
+        s = t
+    s = (s or "").replace("**", "").replace("\n", " ").strip()
+    if not s:
+        return t
+    return s[:60] + "…" if len(s) > 60 else s
 
 
 @ui.page("/note")
@@ -45,12 +80,13 @@ def note_page(path: str = "") -> None:
     token = uuid.uuid4().hex
     LIVE[token] = note
     state = {"v": 0}
+    bodies: list = []  # the (hidden) edit forms, for collapse/expand all
     assets_dir = note_path.parent / f"{note_path.stem}.assets"
     themes = sorted(p.stem for p in settings.paths.themes_dir.glob("*.toml"))
     packs = sorted(p.name for p in settings.paths.packs_dir.iterdir() if p.is_dir())
 
     ui.add_head_html('<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>')
-    block_col: ui.column
+    block_col: ui.row
     preview_frame: ui.element
 
     def refresh() -> None:
@@ -59,6 +95,7 @@ def note_page(path: str = "") -> None:
         preview_frame.update()
 
     def rebuild() -> None:
+        bodies.clear()
         block_col.clear()
         with block_col:
             for i, b in enumerate(note.blocks):
@@ -75,8 +112,30 @@ def note_page(path: str = "") -> None:
         del note.blocks[i]
         rebuild()
 
-    def add(kind: str) -> None:
-        note.blocks.append(_new_block(kind))
+    def duplicate(i: int) -> None:
+        note.blocks.insert(i + 1, note.blocks[i].model_copy(deep=True))
+        rebuild()
+
+    def insert_below(i: int) -> None:
+        note.blocks.insert(i + 1, _new_block(kind.value))
+        rebuild()
+
+    def make_two_col(i: int) -> None:
+        note.blocks[i].layout = "col1"
+        if i + 1 < len(note.blocks):
+            note.blocks[i + 1].layout = "col2"
+        else:
+            nb = _new_block("body")
+            nb.layout = "col2"
+            note.blocks.append(nb)
+        rebuild()
+
+    def set_layout(b, value: str) -> None:
+        b.layout = value
+        rebuild()  # re-mirrors the side-by-side columns + bumps the preview
+
+    def add(kind_value: str) -> None:
+        note.blocks.append(_new_block(kind_value))
         rebuild()
 
     def save() -> None:
@@ -182,22 +241,39 @@ def note_page(path: str = "") -> None:
                 b.items = [ln for ln in e.value.splitlines() if ln.strip()]
                 refresh()
             citems.on_value_change(_set_citems)
-        with ui.row().classes("items-center gap-4"):
-            ui.select({"auto": "Auto", "col1": "Left", "col2": "Right", "full": "Full width"},
-                      label="Layout").bind_value(b, "layout").on_value_change(refresh)
-            ui.select(["high", "medium", "low"], label="Confidence", clearable=True).bind_value(b, "confidence").on_value_change(refresh)
+        ui.select(["high", "medium", "low"], label="Confidence", clearable=True).bind_value(b, "confidence").on_value_change(refresh)
 
     def _card(i: int, b) -> None:
-        with ui.card().classes("w-full"):
-            with ui.row().classes("items-center w-full justify-between"):
-                with ui.row().classes("items-center gap-2"):
-                    ui.icon("drag_indicator").classes("drag-handle cursor-move")
-                    ui.label(b.type).classes("text-bold")
-                with ui.row().classes("gap-1"):
-                    ui.button(icon="arrow_upward", on_click=lambda _, i=i: move(i, -1)).props("flat dense")
-                    ui.button(icon="arrow_downward", on_click=lambda _, i=i: move(i, 1)).props("flat dense")
-                    ui.button(icon="delete", on_click=lambda _, i=i: delete(i)).props("flat dense color=negative")
-            _fields(b)
+        # col1/col2 blocks render half-width so a pair sits side-by-side, mirroring the page.
+        is_pair = b.layout in ("col1", "col2")
+        width = "width:49%;" if is_pair else "width:100%;"
+        with ui.card().classes("blockrow").style(width + "padding:4px 8px;gap:2px;"):
+            with ui.row().classes("items-center w-full gap-1 no-wrap"):
+                ui.icon("drag_indicator").classes("drag-handle cursor-move text-grey")
+                ui.icon(_ICONS.get(b.type, "crop_square")).classes("text-grey")
+                lbl = ui.label(_snippet(b)).classes("grow cursor-pointer").style(
+                    "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                )
+                tog = ui.toggle({"col1": "L", "col2": "R", "full": "▭", "auto": "A"}, value=b.layout) \
+                    .props("dense no-caps unelevated").on_value_change(lambda e, b=b: set_layout(b, e.value))
+                if b.type == "banner":
+                    tog.disable()
+                with ui.button(icon="more_vert").props("flat dense round"):
+                    with ui.menu():
+                        ui.menu_item("Move up", on_click=lambda i=i: move(i, -1))
+                        ui.menu_item("Move down", on_click=lambda i=i: move(i, 1))
+                        ui.separator()
+                        ui.menu_item("Make 2-column row", on_click=lambda i=i: make_two_col(i))
+                        ui.menu_item("Duplicate", on_click=lambda i=i: duplicate(i))
+                        ui.menu_item("Insert below", on_click=lambda i=i: insert_below(i))
+                        ui.separator()
+                        ui.menu_item("Delete", on_click=lambda i=i: delete(i))
+            body = ui.column().classes("w-full")
+            body.set_visibility(False)
+            with body:
+                _fields(b)
+            bodies.append(body)
+            lbl.on("click", lambda _, body=body: body.set_visibility(not body.visible))
 
     def _confirm_delete_note() -> None:
         with ui.dialog() as dlg, ui.card().classes("p-4 gap-2"):
@@ -224,10 +300,17 @@ def note_page(path: str = "") -> None:
     # ---- editor + preview ----
     with ui.row().classes("w-full no-wrap gap-4 px-2"):
         with ui.column().classes("w-1/2"):
-            with ui.row().classes("items-center gap-2"):
+            with ui.row().classes("items-center gap-2 w-full"):
                 kind = ui.select(BLOCK_TYPES, value="body", label="Add block").props("dense outlined")
                 ui.button("Add", icon="add", on_click=lambda: add(kind.value)).props("no-caps")
-            block_col = ui.column().classes("w-full blocklist")
+                ui.space()
+                ui.button(icon="unfold_less", on_click=lambda: [bd.set_visibility(False) for bd in bodies]) \
+                    .props("flat dense round").tooltip("Collapse all")
+                ui.button(icon="unfold_more", on_click=lambda: [bd.set_visibility(True) for bd in bodies]) \
+                    .props("flat dense round").tooltip("Expand all")
+            block_col = ui.row().classes("w-full blocklist").style(
+                "flex-wrap:wrap;align-content:flex-start;gap:8px;"
+            )
         with ui.column().classes("w-1/2"):
             preview_frame = ui.element("iframe").style(
                 "width:100%;height:80vh;border:1px solid #ccc;border-radius:6px;"
