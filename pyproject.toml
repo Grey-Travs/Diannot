@@ -6,6 +6,14 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Diannot contributors" }]
+keywords = ["study-notes", "flashcards", "spaced-repetition", "anki", "claude", "ai", "pdf"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Education",
+    "Topic :: Text Processing :: Markup :: HTML",
+]
 dependencies = [
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
