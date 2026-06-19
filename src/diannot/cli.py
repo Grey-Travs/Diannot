@@ -214,5 +214,22 @@ def render(
     _write_render(note, settings, stem, theme, pdf, png, pack=pack)
 
 
+@app.command()
+def edit(
+    note_path: Path = typer.Argument(..., exists=True, help="Note JSON to edit."),
+    port: int = typer.Option(8080, "--port", help="Port for the editor server."),
+    no_show: bool = typer.Option(False, "--no-show", help="Don't auto-open a browser."),
+) -> None:
+    """Open the interactive editor for a note (requires the 'editor' extra)."""
+    try:
+        import nicegui  # noqa: F401
+    except ImportError:
+        typer.secho("The editor needs the 'editor' extra:  uv sync --extra editor", fg="red")
+        raise typer.Exit(1)
+    from .editor import run_editor
+
+    run_editor(note_path, port=port, show=not no_show)
+
+
 if __name__ == "__main__":
     app()

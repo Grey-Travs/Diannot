@@ -27,7 +27,7 @@ system below is encoded faithfully from those pages.
 | Image/scanned ingestion | **Vision-native** (Claude reads the page → blocks directly); Tesseract offline fallback (`--tesseract`, `ocr` extra) | Far better fidelity for richly-designed pages than OCR→text→structure. |
 | CLI | Typer | |
 | Config | pydantic-settings reading `diannot.toml` (+ `DIANNOT_` env) | Themes & packs are **data**, not code. |
-| Editor UI | Deferred (NiceGUI vs web TBD) | Phase 1 is CLI-driven; output is HTML opened in a browser. |
+| Editor UI | **NiceGUI** (Phase 3) — `diannot edit` | Local web editor: block reorder (drag/buttons), inline edit, image upload, live preview, save. |
 
 ---
 
@@ -87,7 +87,7 @@ injected as CSS variables — add a new theme without touching core code.
 
 ### Style packs (a toggle; `src/diannot/assets/packs/<pack>/`)
 - `study_notes` — light, playful, handwritten feel (**default**, built).
-- `pro_infographic` — dark navy + gold, corporate/infographic feel (later phase).
+- `pro_infographic` — dark navy + gold, corporate/infographic feel (**built**).
 
 A pack = `template.html.j2` + `base.css`. Themes supply colors; packs supply fonts/layout.
 
@@ -106,10 +106,10 @@ Plain files → git-friendly, portable, local-first.
 
 ## Project status
 - **Phase 1 (done):** text → validated blocks → styled HTML/PDF. CLI-driven.
-- **Phase 2 (in progress):** robust ingestion. Done: image & scanned-PDF ingestion
-  (vision-native via `structure_image`, Tesseract offline fallback). Next: Office docs
-  (Word/PowerPoint), batch-folder ingest, source-page links, confidence flags.
-- Phase 3: interactive editor UI (NiceGUI vs web), drag-reorder, `pro_infographic`, Mermaid + KaTeX.
+- **Phase 2 (done):** robust ingestion — image & scanned-PDF (vision-native + Tesseract
+  fallback), Word/PowerPoint, batch-folder ingest, source-page links, confidence flags.
+- **Phase 3 (done):** NiceGUI editor (`diannot edit`), `pro_infographic` pack, Mermaid +
+  KaTeX rendering (included only when a note uses them).
 - Phase 4: study features (flashcards, SRS, Anki export, quizzes, glossary, FTS5 search).
 - Phase 5: polish (theme/plugin system, packaging, tests + CI, Docker, a11y, docs).
 

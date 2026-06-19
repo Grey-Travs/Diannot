@@ -51,11 +51,21 @@ uv run diannot ingest page.png --title "The Blood" --theme circulatory --render
 uv run diannot ingest scanned.pdf --vision --render
 uv run diannot ingest page.png --tesseract   # offline OCR (needs: uv sync --extra ocr + Tesseract binary)
 
-# 3. Render any note JSON to themed HTML (+ optional PDF/PNG)
+# 3. Ingest a whole folder into a notebook (subfolders become chapters)
+uv run diannot batch ./materials --out ./notebook --render
+
+# 4. Render any note JSON to themed HTML (+ optional PDF/PNG)
 uv run diannot render examples/circulatory.json --pdf --png
-uv run diannot render examples/circulatory.json --theme histology   # re-theme the same content
+uv run diannot render examples/circulatory.json --theme histology          # re-theme
+uv run diannot render examples/circulatory.json --pack pro_infographic     # dark navy + gold
+
+# 5. Open the interactive editor (needs: uv sync --extra editor)
+uv run diannot edit examples/circulatory.json
 ```
 Open the resulting `output/*.html` in any browser.
+
+`diagram` blocks render as Mermaid and `$…$` / `$$…$$` math via KaTeX (pulled in only
+when a note uses them). Optional extras: `ocr` (offline Tesseract) and `editor` (NiceGUI).
 
 Available themes live in `src/diannot/themes/` (`circulatory`, `histology` so far —
 add a new one by dropping in a TOML file). Fonts are bundled locally (OFL `woff2`) and
