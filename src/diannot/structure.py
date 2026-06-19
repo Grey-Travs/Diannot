@@ -1,31 +1,41 @@
-"""Turn raw study text into a validated :class:`~diannot.models.Note` using Claude.
+"""Turn raw study text *or* page images into a validated Note using Claude.
 
-This is the "structure" step: it detects headings, term/definition pairs, lists
-and comparison tables, and bolds testable terms — emitting JSON that conforms to
-the Diannot block schema. The model output is parsed and validated with Pydantic,
-and the call is retried (with the validation error fed back) on malformed output.
+Two entry points share one block schema and validation path:
+- :func:`structure_text`  — messy extracted text -> blocks.
+- :func:`structure_image` — page image(s) -> blocks, vision-native (the model sees
+  the page, so layout/tables/colour survive far better than OCR -> text -> structure).
 
-Authentication is handled entirely by the Claude Agent SDK / bundled CLI:
-- a logged-in Claude Code subscription session, or
-- an ``ANTHROPIC_API_KEY`` environment variable.
-Diannot never reads, stores, or hardcodes credentials.
+Model output is parsed and validated with Pydantic, and the call is retried (with
+the validation error fed back) on malformed output.
+
+Authentication is handled entirely by the Claude Agent SDK / bundled CLI (a logged-in
+Claude Code subscription session, or an ``ANTHROPIC_API_KEY``). Diannot never reads,
+stores, or hardcodes credentials.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import re
 
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ResultMessage,
+    TextBlock,
+    query,
+)
 from pydantic import ValidationError
 
 from .config import Settings
 from .models import Note
 
 SYSTEM_PROMPT = """\
-You are a study-notes structuring engine. You convert raw, often messy text \
-(extracted from lecture handouts or PDFs) into a STRUCTURED JSON document of \
-typed "blocks" for a beautifully styled study-notes app. You restructure and \
-lightly clean the material — you do NOT summarize it away or invent facts.
+You are a study-notes structuring engine. You convert source study material — messy \
+extracted text OR images of textbook/lecture pages — into a STRUCTURED JSON document of \
+typed "blocks" for a beautifully styled study-notes app. You restructure and lightly \
+clean the material — you do NOT summarize it away or invent facts.
 
 OUTPUT CONTRACT (critical):
 - Respond with a SINGLE JSON object and nothing else. No prose, no explanation,
@@ -60,20 +70,23 @@ BLOCK TYPES (each block is an object with a "type" field):
     Do NOT fabricate image paths.
 
 RULES:
-1. Begin with one banner block for the chapter title. The raw text may repeat or
-   garble the title (duplicated layout layers, OCR typos); DEDUPE it and fix only
-   obvious typos in the TITLE (e.g. "Lymphathic"->"Lymphatic", "Systens"->"Systems").
-2. Preserve the educational content faithfully. Do not drop facts, do not add
-   facts, do not paraphrase into something shorter. Reorganize messy/interleaved
-   two-column extraction back into logical reading order.
+1. Begin with one banner block for the chapter title. The source may repeat or garble
+   the title (duplicated layout layers, OCR typos); DEDUPE it and fix only obvious typos
+   in the TITLE (e.g. "Lymphathic"->"Lymphatic", "Systens"->"Systems").
+2. Preserve the educational content faithfully. Do not drop facts, do not add facts, do
+   not paraphrase into something shorter. Reorganize messy/interleaved two-column
+   material back into logical reading order.
 3. Convert obvious "Term — definition" lines into term_definition blocks.
 4. Convert comparison-style content into a table block.
 5. Convert bulleted/numbered runs into list blocks (preserve nesting).
-6. Bold the testable terms and key phrases (anatomical names, key processes,
-   numeric facts) with **double asterisks** in body, definitions, list items and
-   table cells.
+6. Bold the testable terms and key phrases (anatomical names, key processes, numeric
+   facts) with **double asterisks** in body, definitions, list items and table cells.
 7. Do not set theme/pack/layout — the app controls those.
-8. Output valid JSON only. Escape characters properly. No trailing commas.
+8. If you are given page IMAGES: transcribe ALL visible text faithfully and in logical
+   reading order (reconstruct across columns). For photographs, diagrams or micrographs
+   you cannot transcribe, capture them briefly as a body note or an image caption that
+   describes them — never invent labels, numbers, or text you cannot clearly read.
+9. Output valid JSON only. Escape characters properly. No trailing commas.
 """
 
 
@@ -85,16 +98,30 @@ def _build_user_prompt(raw_text: str, title: str | None) -> str:
     )
     return (
         title_hint
-        + "Structure the following raw study text into the JSON document described "
-        "in your instructions. Output JSON only.\n\n"
+        + "Structure the following raw study text into the JSON document described in "
+        "your instructions. Output JSON only.\n\n"
         "<<<RAW TEXT>>>\n"
         f"{raw_text}\n"
         "<<<END RAW TEXT>>>"
     )
 
 
-def _extract_json(text: str) -> dict | None:
-    """Pull a JSON object out of a model response (handles code fences/prose)."""
+def _build_vision_prompt(title: str | None, n_images: int) -> str:
+    title_hint = (
+        f'The chapter title is "{title}". Use it for the banner.\n'
+        if title
+        else "Infer the chapter title from the page(s) for the banner.\n"
+    )
+    return (
+        title_hint
+        + f"You are given {n_images} page image(s) of study material. Transcribe and "
+        "structure ALL of their content into the JSON document described in your "
+        "instructions, in logical reading order. Output JSON only."
+    )
+
+
+def _extract_json(text: str) -> object | None:
+    """Pull a JSON value out of a model response (handles code fences/prose)."""
     t = text.strip()
     fence = re.search(r"```(?:json)?\s*(.*?)```", t, re.DOTALL)
     if fence:
@@ -108,44 +135,88 @@ def _extract_json(text: str) -> dict | None:
         return None
 
 
-async def _run_query(prompt: str, system: str, model: str) -> tuple[str, list[str]]:
-    """Run a single-turn, tool-free query and return (text, stderr_lines)."""
-    from claude_agent_sdk import (
-        AssistantMessage,
-        ClaudeAgentOptions,
-        ResultMessage,
-        TextBlock,
-        query,
-    )
+def _note_from_response(
+    text: str, title: str | None, theme: str, pack: str
+) -> tuple[Note | None, str]:
+    """Parse + validate a model response into a Note, or return (None, error)."""
+    if not text:
+        return None, "empty response from model"
+    data = _extract_json(text)
+    if not isinstance(data, dict):
+        return None, "response was not a single JSON object"
+    # The app controls these; never let the model override them.
+    data.pop("theme", None)
+    data.pop("pack", None)
+    if title:
+        data["title"] = title
+    data["theme"] = theme
+    data["pack"] = pack
+    try:
+        return Note.model_validate(data), ""
+    except ValidationError as exc:
+        return None, str(exc)[:1500]
 
-    stderr_lines: list[str] = []
-    options = ClaudeAgentOptions(
+
+def _options(model: str, stderr_sink) -> ClaudeAgentOptions:
+    return ClaudeAgentOptions(
         model=model,
-        system_prompt=system,
+        system_prompt=SYSTEM_PROMPT,
         allowed_tools=[],
         max_turns=1,
         setting_sources=[],  # ignore project/user/local settings for a clean call
         permission_mode="bypassPermissions",
-        # Clear the nested-session flag so the bundled CLI doesn't refuse to run
-        # when Diannot is invoked from within a Claude Code session.
+        # Clear the nested-session flag so the bundled CLI runs from inside a
+        # Claude Code session.
         env={"CLAUDECODE": ""},
-        stderr=stderr_lines.append,
+        stderr=stderr_sink,
     )
 
+
+async def _collect(messages) -> str:
+    """Concatenate assistant text from a query() message stream."""
     chunks: list[str] = []
     result_text: str | None = None
-    async for message in query(prompt=prompt, options=options):
+    async for message in messages:
         if isinstance(message, AssistantMessage):
             for block in getattr(message, "content", None) or []:
                 if isinstance(block, TextBlock):
                     chunks.append(block.text)
         elif isinstance(message, ResultMessage):
             result_text = getattr(message, "result", None)
-
     text = "".join(chunks).strip()
     if not text and result_text:
         text = result_text.strip()
-    return text, stderr_lines
+    return text
+
+
+async def _run_text(prompt: str, model: str) -> tuple[str, list[str]]:
+    stderr: list[str] = []
+    text = await _collect(query(prompt=prompt, options=_options(model, stderr.append)))
+    return text, stderr
+
+
+async def _run_multimodal(content: list[dict], model: str) -> tuple[str, list[str]]:
+    stderr: list[str] = []
+
+    async def _stream():
+        yield {"type": "user", "message": {"role": "user", "content": content}}
+
+    text = await _collect(query(prompt=_stream(), options=_options(model, stderr.append)))
+    return text, stderr
+
+
+def _failure(max_retries: int, last_error: str, last_stderr: list[str]) -> RuntimeError:
+    hint = ""
+    if last_stderr:
+        tail = " | ".join(s.strip() for s in last_stderr[-4:] if s.strip())
+        if tail:
+            hint = f"\nLast CLI stderr: {tail}"
+    return RuntimeError(
+        f"Structuring failed after {max_retries + 1} attempt(s). "
+        f"Last error: {last_error}{hint}\n"
+        "If this is an auth problem, ensure the Claude Code CLI is logged in or "
+        "set ANTHROPIC_API_KEY."
+    )
 
 
 def structure_text(
@@ -157,57 +228,73 @@ def structure_text(
     settings: Settings | None = None,
     max_retries: int = 2,
 ) -> Note:
-    """Structure ``raw_text`` into a validated :class:`Note`.
-
-    Retries up to ``max_retries`` times, feeding the validation error back to the
-    model. Raises :class:`RuntimeError` if no valid Note is produced.
-    """
+    """Structure ``raw_text`` into a validated :class:`Note` (retries on invalid)."""
     if not raw_text.strip():
         raise ValueError("Cannot structure empty text.")
-
     settings = settings or Settings()
     model = model or settings.models.structure
-    user_prompt = _build_user_prompt(raw_text, title)
+    base_prompt = _build_user_prompt(raw_text, title)
 
-    last_error = "unknown error"
-    last_stderr: list[str] = []
+    last_error, last_stderr = "unknown error", []
     for attempt in range(max_retries + 1):
-        prompt = user_prompt
+        prompt = base_prompt
         if attempt:
             prompt += (
                 f"\n\nYour previous response was invalid ({last_error}). "
                 "Return ONLY a corrected single JSON object."
             )
-        text, last_stderr = asyncio.run(_run_query(prompt, SYSTEM_PROMPT, model))
+        text, last_stderr = asyncio.run(_run_text(prompt, model))
+        note, last_error = _note_from_response(text, title, theme, pack)
+        if note is not None:
+            return note
+    raise _failure(max_retries, last_error, last_stderr)
 
-        if not text:
-            last_error = "empty response from model"
-            continue
-        data = _extract_json(text)
-        if not isinstance(data, dict):
-            last_error = "response was not a single JSON object"
-            continue
 
-        # The app controls these; never let the model override them.
-        data.pop("theme", None)
-        data.pop("pack", None)
-        if title:
-            data["title"] = title
-        data["theme"] = theme
-        data["pack"] = pack
-        try:
-            return Note.model_validate(data)
-        except ValidationError as exc:
-            last_error = str(exc)[:1500]
+def structure_image(
+    images: list[bytes],
+    title: str | None = None,
+    theme: str = "circulatory",
+    pack: str = "study_notes",
+    model: str | None = None,
+    settings: Settings | None = None,
+    max_retries: int = 2,
+) -> Note:
+    """Structure page image(s) (PNG bytes) into a validated :class:`Note` via vision."""
+    if not images:
+        raise ValueError("No images to structure.")
+    settings = settings or Settings()
+    model = model or settings.models.structure
 
-    hint = ""
-    if last_stderr:
-        tail = " | ".join(s.strip() for s in last_stderr[-4:] if s.strip())
-        if tail:
-            hint = f"\nLast CLI stderr: {tail}"
-    raise RuntimeError(
-        f"Structuring failed after {max_retries + 1} attempt(s). "
-        f"Last error: {last_error}{hint}\n"
-        "If this is an auth problem, ensure the Claude Code CLI is logged in or "
-        "set ANTHROPIC_API_KEY."
-    )
+    base_content: list[dict] = [
+        {"type": "text", "text": _build_vision_prompt(title, len(images))}
+    ]
+    for img in images:
+        base_content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": base64.b64encode(img).decode("ascii"),
+                },
+            }
+        )
+
+    last_error, last_stderr = "unknown error", []
+    for attempt in range(max_retries + 1):
+        content = base_content
+        if attempt:
+            content = base_content + [
+                {
+                    "type": "text",
+                    "text": (
+                        f"Your previous response was invalid ({last_error}). "
+                        "Return ONLY a corrected single JSON object."
+                    ),
+                }
+            ]
+        text, last_stderr = asyncio.run(_run_multimodal(content, model))
+        note, last_error = _note_from_response(text, title, theme, pack)
+        if note is not None:
+            return note
+    raise _failure(max_retries, last_error, last_stderr)

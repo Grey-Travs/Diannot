@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 TEXT_SUFFIXES = {".txt", ".md", ".text"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
 
 
 def parse_pages(spec: str, total: int) -> list[int]:
@@ -57,5 +58,55 @@ def load_raw_text(path: Path | str, pages: str | None = None) -> str:
     if suffix in TEXT_SUFFIXES:
         return path.read_text(encoding="utf-8").strip()
     raise ValueError(
-        f"Unsupported input '{path.name}'. Phase 1 supports .txt, .md and simple .pdf."
+        f"Unsupported text input '{path.name}' (expected .txt, .md or .pdf)."
     )
+
+
+def is_scanned_pdf(path: Path | str, pages: str | None = None, min_chars_per_page: int = 20) -> bool:
+    """Heuristic: a PDF with almost no extractable text is image-only (scanned)."""
+    import fitz
+
+    doc = fitz.open(path)
+    try:
+        idxs = list(parse_pages(pages, doc.page_count) if pages else range(doc.page_count))
+        chars = sum(len(doc[i].get_text().strip()) for i in idxs)
+    finally:
+        doc.close()
+    return chars < min_chars_per_page * max(len(idxs), 1)
+
+
+def load_image_sources(path: Path | str, pages: str | None = None, dpi: int = 200) -> list[bytes]:
+    """Return page image(s) as PNG bytes — for an image file or a (rasterized) PDF."""
+    import fitz
+
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        doc = fitz.open(path)
+        try:
+            idxs = parse_pages(pages, doc.page_count) if pages else range(doc.page_count)
+            return [doc[i].get_pixmap(dpi=dpi).tobytes("png") for i in idxs]
+        finally:
+            doc.close()
+    if suffix in IMAGE_SUFFIXES:
+        pix = fitz.Pixmap(str(path))
+        if pix.colorspace is not None and pix.colorspace.n >= 4:  # CMYK -> RGB
+            pix = fitz.Pixmap(fitz.csRGB, pix)
+        return [pix.tobytes("png")]
+    raise ValueError(f"'{path.name}' is not an image or PDF.")
+
+
+def ocr_image_sources(images: list[bytes], lang: str = "eng") -> str:
+    """Offline OCR of PNG image bytes via Tesseract (the `ocr` extra)."""
+    try:
+        import io
+
+        import pytesseract
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError(
+            "Offline OCR needs the 'ocr' extra (uv sync --extra ocr) and the Tesseract "
+            "binary installed and on PATH."
+        ) from exc
+    parts = [pytesseract.image_to_string(Image.open(io.BytesIO(b)), lang=lang) for b in images]
+    return "\n\n".join(parts).strip()

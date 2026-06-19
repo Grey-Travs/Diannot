@@ -16,6 +16,10 @@ dependencies = [
     "claude-agent-sdk",
 ]
 
+[project.optional-dependencies]
+# Offline OCR fallback. Also requires the Tesseract binary on PATH.
+ocr = ["pytesseract>=0.3.10", "pillow>=10.0"]
+
 [project.scripts]
 diannot = "diannot.cli:app"
 

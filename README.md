@@ -46,6 +46,11 @@ uv run diannot create my-notes/heart.json --title "The Heart" --theme circulator
 uv run diannot ingest lecture.txt --title "The Heart" --theme circulatory --render
 uv run diannot ingest "notes.pdf" --pages 1-3 --theme histology --render --pdf
 
+# ...including images & scanned PDFs (Claude vision; scanned PDFs auto-detected)
+uv run diannot ingest page.png --title "The Blood" --theme circulatory --render
+uv run diannot ingest scanned.pdf --vision --render
+uv run diannot ingest page.png --tesseract   # offline OCR (needs: uv sync --extra ocr + Tesseract binary)
+
 # 3. Render any note JSON to themed HTML (+ optional PDF/PNG)
 uv run diannot render examples/circulatory.json --pdf --png
 uv run diannot render examples/circulatory.json --theme histology   # re-theme the same content

@@ -23,7 +23,8 @@ system below is encoded faithfully from those pages.
 | Data model | Pydantic v2 "blocks" | Canonical storage = JSON files on disk (notebook=folder, chapter=subfolder, note=JSON). |
 | Rendering | Jinja2 → self-contained HTML + CSS | One `<style>` per note; theme injected as CSS variables. |
 | **PDF/PNG export** | **Headless Chromium via Playwright** | Chosen over WeasyPrint: WeasyPrint can't render `-webkit-text-stroke` (the banner outline) and needs fiddly native libs on Windows. Chromium renders the PDF identically to the browser. |
-| PDF extraction | PyMuPDF (`fitz`) | OCR / scanned PDFs are a later phase. |
+| PDF extraction | PyMuPDF (`fitz`) | Text PDFs via `fitz`; scanned/image PDFs auto-route to vision. |
+| Image/scanned ingestion | **Vision-native** (Claude reads the page → blocks directly); Tesseract offline fallback (`--tesseract`, `ocr` extra) | Far better fidelity for richly-designed pages than OCR→text→structure. |
 | CLI | Typer | |
 | Config | pydantic-settings reading `diannot.toml` (+ `DIANNOT_` env) | Themes & packs are **data**, not code. |
 | Editor UI | Deferred (NiceGUI vs web TBD) | Phase 1 is CLI-driven; output is HTML opened in a browser. |
@@ -104,8 +105,10 @@ Plain files → git-friendly, portable, local-first.
 ---
 
 ## Project status
-- **Phase 1 (in progress):** text → validated blocks → styled HTML/PDF. CLI-driven.
-- Phase 2: robust ingestion (OCR, Office docs, batch, source-page links, confidence flags).
+- **Phase 1 (done):** text → validated blocks → styled HTML/PDF. CLI-driven.
+- **Phase 2 (in progress):** robust ingestion. Done: image & scanned-PDF ingestion
+  (vision-native via `structure_image`, Tesseract offline fallback). Next: Office docs
+  (Word/PowerPoint), batch-folder ingest, source-page links, confidence flags.
 - Phase 3: interactive editor UI (NiceGUI vs web), drag-reorder, `pro_infographic`, Mermaid + KaTeX.
 - Phase 4: study features (flashcards, SRS, Anki export, quizzes, glossary, FTS5 search).
 - Phase 5: polish (theme/plugin system, packaging, tests + CI, Docker, a11y, docs).
