@@ -109,54 +109,19 @@ def ingest(
     Text and text-PDFs are read directly; images and scanned PDFs are read with Claude
     vision (or offline Tesseract via --tesseract).
     """
-    from .ingest import (
-        IMAGE_SUFFIXES,
-        is_scanned_pdf,
-        load_image_sources,
-        load_raw_text,
-        ocr_image_sources,
-    )
-    from .structure import structure_image, structure_text
+    from .pipeline import decide_mode, ingest_file
 
     settings = Settings()
     theme = theme or settings.render.default_theme
     model_id = model or settings.models.structure
-    suffix = input_path.suffix.lower()
-
-    # Decide how to read the source.
-    if suffix in IMAGE_SUFFIXES:
-        mode = "tesseract" if (tesseract or vision is False) else "vision"
-    elif suffix == ".pdf":
-        if vision is True:
-            mode = "tesseract" if tesseract else "vision"
-        elif vision is False:
-            mode = "text"
-        else:  # auto: scanned PDFs have ~no extractable text
-            scanned = is_scanned_pdf(input_path, pages)
-            mode = ("tesseract" if tesseract else "vision") if scanned else "text"
-    else:
-        mode = "text"
+    mode = decide_mode(input_path.suffix, vision, tesseract, input_path, pages)
+    typer.echo(f"Ingesting {input_path.name} (mode: {mode}) with {model_id}…")
 
     try:
-        if mode == "vision":
-            images = load_image_sources(input_path, pages, dpi=dpi)
-            typer.echo(f"Rendered {len(images)} page image(s). Structuring with Claude vision ({model_id})…")
-            note = structure_image(images, title=title, theme=theme, pack=pack, model=model, settings=settings)
-        elif mode == "tesseract":
-            images = load_image_sources(input_path, pages, dpi=dpi)
-            raw = ocr_image_sources(images)
-            if not raw.strip():
-                typer.secho("Tesseract OCR produced no text.", fg="red")
-                raise typer.Exit(1)
-            typer.echo(f"OCR'd {len(images)} image(s) -> {len(raw)} chars. Structuring ({model_id})…")
-            note = structure_text(raw, title=title, theme=theme, pack=pack, model=model, settings=settings)
-        else:  # text
-            raw = load_raw_text(input_path, pages)
-            if not raw.strip():
-                typer.secho("No text extracted (scanned PDF? try --vision).", fg="red")
-                raise typer.Exit(1)
-            typer.echo(f"Extracted {len(raw)} chars. Structuring with Claude ({model_id})…")
-            note = structure_text(raw, title=title, theme=theme, pack=pack, model=model, settings=settings)
+        note = ingest_file(
+            input_path, mode=mode, pages=pages, title=title, theme=theme, pack=pack,
+            model=model, vision=vision, tesseract=tesseract, dpi=dpi, settings=settings,
+        )
     except (ValueError, OSError, RuntimeError) as exc:
         typer.secho(f"Ingestion failed: {exc}", fg="red")
         raise typer.Exit(1)
@@ -168,6 +133,69 @@ def ingest(
 
     if render:
         _write_render(note, settings, out.stem, theme, pdf, png)
+
+
+@app.command()
+def batch(
+    input_dir: Path = typer.Argument(..., exists=True, file_okay=False, help="Folder of study materials."),
+    out: Path = typer.Option(Path("notebook"), "--out", "-o", help="Output notebook folder."),
+    theme: Optional[str] = typer.Option(None, "--theme", "-t", help="Color theme (default: config)."),
+    pack: str = typer.Option("study_notes", "--pack", help="Style pack."),
+    model: Optional[str] = typer.Option(None, "--model", help="Override the structuring model."),
+    vision: Optional[bool] = typer.Option(None, "--vision/--no-vision", help="Force Claude vision on/off."),
+    tesseract: bool = typer.Option(False, "--tesseract", help="Use offline Tesseract OCR."),
+    dpi: int = typer.Option(200, "--dpi", help="Rasterization DPI for image / scanned-PDF input."),
+    glob: str = typer.Option("**/*", "--glob", help="Which files to include (recursive by default)."),
+    render: bool = typer.Option(False, "--render", help="Also render each note + an index.html."),
+) -> None:
+    """Ingest every supported file in a folder into a notebook of chapter notes.
+
+    Subfolders are preserved as chapters; each source file becomes one note JSON.
+    Per-file failures are reported and skipped (the batch continues).
+    """
+    from .pipeline import SUPPORTED_SUFFIXES, decide_mode, ingest_file
+
+    settings = Settings()
+    theme = theme or settings.render.default_theme
+    files = sorted(
+        p for p in input_dir.glob(glob)
+        if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES
+    )
+    if not files:
+        typer.secho(f"No supported files found in {input_dir}.", fg="red")
+        raise typer.Exit(1)
+
+    out.mkdir(parents=True, exist_ok=True)
+    ok, failed, rendered = 0, 0, []
+    for i, f in enumerate(files, start=1):
+        rel = f.relative_to(input_dir)
+        note_path = (out / rel).with_suffix(".note.json")
+        note_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            mode = decide_mode(f.suffix, vision, tesseract, f, None)
+            typer.echo(f"[{i}/{len(files)}] {rel} (mode: {mode})…")
+            note = ingest_file(
+                f, mode=mode, theme=theme, pack=pack, model=model,
+                vision=vision, tesseract=tesseract, dpi=dpi, settings=settings,
+            )
+            note_path.write_text(note.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
+            ok += 1
+            if render:
+                html_path = note_path.with_suffix(".html")
+                html_path.write_text(render_note_html(note, settings=settings), encoding="utf-8")
+                rendered.append((note.title, html_path.relative_to(out)))
+        except Exception as exc:  # keep going on per-file failures
+            typer.secho(f"  ! {rel}: {exc}", fg="red")
+            failed += 1
+
+    if render and rendered:
+        index = ["<!doctype html><meta charset=utf-8><title>Notebook</title>", "<h1>Notebook</h1>", "<ul>"]
+        index += [f'<li><a href="{href.as_posix()}">{title}</a></li>' for title, href in rendered]
+        index.append("</ul>")
+        (out / "index.html").write_text("\n".join(index), encoding="utf-8")
+        typer.echo(f"Index -> {out / 'index.html'}")
+
+    typer.secho(f"Done: {ok} ok, {failed} failed -> {out}", fg="green" if not failed else "yellow")
 
 
 @app.command()
