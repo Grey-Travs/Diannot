@@ -31,6 +31,8 @@ dependencies = [
 ocr = ["pytesseract>=0.3.10", "pillow>=10.0"]
 # Interactive editor (Phase 3).
 editor = ["nicegui>=2.0"]
+# Diannot Studio — the full front-end app (native window via pywebview, or browser).
+gui = ["nicegui>=2.0", "pywebview>=5"]
 # Anki .apkg export (Phase 4).
 anki = ["genanki>=0.13"]
 

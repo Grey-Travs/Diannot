@@ -424,5 +424,23 @@ def edit(
     run_editor(note_path, port=port, show=not no_show)
 
 
+@app.command()
+def studio(
+    workspace: Optional[Path] = typer.Option(None, "--workspace", "-w", help="Folder that holds your notes."),
+    web: bool = typer.Option(False, "--web", help="Open in a browser instead of a native window."),
+    port: int = typer.Option(8080, "--port", help="Port for the Studio server."),
+    no_show: bool = typer.Option(False, "--no-show", help="Don't auto-open the window/tab."),
+) -> None:
+    """Launch Diannot Studio — the full app (needs the 'gui' extra)."""
+    try:
+        import nicegui  # noqa: F401
+    except ImportError:
+        typer.secho("Diannot Studio needs the 'gui' extra:  uv sync --extra gui", fg="red")
+        raise typer.Exit(1)
+    from .studio.app import launch_studio
+
+    launch_studio(workspace=workspace, native=not web, port=port, show=not no_show)
+
+
 if __name__ == "__main__":
     app()
