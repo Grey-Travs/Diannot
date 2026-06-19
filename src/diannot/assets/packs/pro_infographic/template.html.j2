@@ -40,7 +40,7 @@
     {% if b.caption or b.source_credit %}<figcaption>{{ b.caption or '' }}{% if b.source_credit %} <span class="credit">{{ b.source_credit }}</span>{% endif %}</figcaption>{% endif %}
   </figure>
 {% elif b.type == 'diagram' %}
-  <figure class="diagram {{ cls }}"><pre class="mermaid-src">{{ b.mermaid }}</pre>{% if b.caption %}<figcaption>{{ b.caption }}</figcaption>{% endif %}</figure>
+  <figure class="diagram {{ cls }}"><pre class="mermaid">{{ b.mermaid }}</pre>{% if b.caption %}<figcaption>{{ b.caption }}</figcaption>{% endif %}</figure>
 {% elif b.type == 'callout' %}
   <aside class="callout {{ b.variant }} {{ cls }}">
     {% if b.title %}<div class="callout-title">{{ b.title }}</div>{% endif %}
@@ -86,5 +86,17 @@
 <main class="page">
 {% for b in note.blocks %}{{ render_block(b) }}{% endfor %}
 </main>
+{% if enable_mermaid %}
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+</script>
+{% endif %}
+{% if enable_katex %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {delimiters: [{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError: false});"></script>
+{% endif %}
 </body>
 </html>

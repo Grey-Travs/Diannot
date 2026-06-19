@@ -136,16 +136,8 @@ figcaption .credit { color: var(--muted); font-style: italic; }
 
 /* ---- Diagram placeholder ---- */
 figure.diagram { margin: 9px 0; break-inside: avoid; }
-.mermaid-src {
-  background: var(--navy-2);
-  border: 1px dashed var(--gold);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 9px;
-  white-space: pre-wrap;
-  color: var(--muted);
-  margin: 0;
-}
+.mermaid { text-align: center; font-size: 9px; white-space: pre-wrap; color: var(--muted); margin: 0; background: #fff; border-radius: 8px; padding: 6px; }
+.mermaid svg { max-width: 100%; height: auto; }
 
 /* ---- Callouts ---- */
 .callout {

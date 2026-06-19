@@ -9,6 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def _settle(page, html_path: Path) -> None:
+    """Give client-side libraries (Mermaid/KaTeX) time to render before capture."""
+    text = Path(html_path).read_text(encoding="utf-8")
+    if 'class="mermaid"' in text or "katex" in text:
+        page.wait_for_timeout(1500)
+
+
 def html_to_pdf(html_path: Path | str, pdf_path: Path | str) -> Path:
     """Render an HTML file to A4 PDF. Page margins come from the CSS ``@page`` rule."""
     from playwright.sync_api import sync_playwright
@@ -21,6 +28,7 @@ def html_to_pdf(html_path: Path | str, pdf_path: Path | str) -> Path:
         browser = p.chromium.launch()
         page = browser.new_page()
         page.goto(html_path.as_uri(), wait_until="networkidle")
+        _settle(page, html_path)
         page.pdf(
             path=str(pdf_path),
             format="A4",
@@ -46,6 +54,7 @@ def html_to_png(html_path: Path | str, png_path: Path | str, width: int = 920) -
             device_scale_factor=2,
         )
         page.goto(html_path.as_uri(), wait_until="networkidle")
+        _settle(page, html_path)
         page.screenshot(path=str(png_path), full_page=True)
         browser.close()
     return png_path

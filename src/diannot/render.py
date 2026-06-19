@@ -112,8 +112,18 @@ def render_note_html(
     pack_css = (pack_dir / "base.css").read_text(encoding="utf-8")
 
     font_css = build_font_css(pack_dir)
+    # Only pull in the Mermaid/KaTeX libraries when the note actually uses them,
+    # so plain notes stay fully self-contained and offline.
+    needs_mermaid = any(b.type == "diagram" for b in note.blocks)
+    needs_katex = note.model_dump_json().count("$") >= 2
+
     env = _environment(pack_dir)
     template = env.get_template("template.html.j2")
     return template.render(
-        note=note, theme=theme_data, pack_css=pack_css, font_css=font_css
+        note=note,
+        theme=theme_data,
+        pack_css=pack_css,
+        font_css=font_css,
+        enable_mermaid=needs_mermaid,
+        enable_katex=needs_katex,
     )
