@@ -1,0 +1,26 @@
+# Clinical Sample / ISO & Quality — navy + gold/amber.
+# Pairs with the pro_infographic pack; also valid (gold-accented) on study_notes.
+name = "Clinical Sample / ISO & Quality"
+
+[colors]
+primary = "#B8860B"        # dark goldenrod — headings & terms
+primary_dark = "#8A6400"   # deep amber — bold key terms
+accent = "#1F4E79"         # navy — secondary accent
+accent_soft = "#F4ECD6"    # pale gold
+ink = "#26303A"            # body text
+page = "#FFFDF7"           # warm white (study_notes); pro_infographic uses its own navy
+
+banner_fill = "#FFFFFF"
+banner_stroke = "#1F4E79"
+banner_shadow = "#E9B949"
+
+table_head_bg = "#1F4E79"
+table_head_ink = "#FFFFFF"
+table_zebra = "#F4ECD6"
+
+callout_tip_bg = "#F4ECD6"
+callout_tip_border = "#E9B949"
+callout_key_bg = "#FBF6E7"
+callout_key_border = "#B8860B"
+callout_warn_bg = "#FFF6E6"
+callout_warn_border = "#E0A100"

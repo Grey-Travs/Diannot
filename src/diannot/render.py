@@ -94,14 +94,15 @@ def render_note_html(
     note: Note,
     settings: Settings | None = None,
     theme: str | None = None,
+    pack: str | None = None,
 ) -> str:
     """Render ``note`` to a complete HTML document string.
 
-    ``theme`` overrides the note's own theme when given.
+    ``theme``/``pack`` override the note's own theme/pack when given.
     """
     settings = settings or Settings()
     theme_name = theme or note.theme or settings.render.default_theme
-    pack = note.pack or settings.render.default_pack
+    pack = pack or note.pack or settings.render.default_pack
 
     pack_dir = settings.paths.packs_dir / pack
     if not pack_dir.exists():

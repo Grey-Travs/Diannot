@@ -42,9 +42,10 @@ def _write_render(
     theme: Optional[str],
     pdf: bool,
     png: bool,
+    pack: Optional[str] = None,
 ) -> Path:
     """Render ``note`` to HTML (+ optional PDF/PNG) under the output dir."""
-    html = render_note_html(note, settings=settings, theme=theme)
+    html = render_note_html(note, settings=settings, theme=theme, pack=pack)
     out_dir = settings.paths.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     html_path = out_dir / f"{stem}.html"
@@ -202,14 +203,15 @@ def batch(
 def render(
     note_path: Path = typer.Argument(..., exists=True, help="Path to a note JSON file."),
     theme: Optional[str] = typer.Option(None, "--theme", "-t", help="Override the note's theme."),
+    pack: Optional[str] = typer.Option(None, "--pack", help="Override the note's style pack."),
     pdf: bool = typer.Option(False, "--pdf", help="Also export a PDF (via Chromium)."),
     png: bool = typer.Option(False, "--png", help="Also export a full-page PNG preview."),
 ) -> None:
     """Render a note JSON to themed HTML, optionally exporting PDF/PNG."""
     settings = Settings()
     note = Note.model_validate_json(note_path.read_text(encoding="utf-8"))
-    stem = note_path.stem + (f"-{theme}" if theme else "")
-    _write_render(note, settings, stem, theme, pdf, png)
+    stem = note_path.stem + (f"-{theme}" if theme else "") + (f"-{pack}" if pack else "")
+    _write_render(note, settings, stem, theme, pdf, png, pack=pack)
 
 
 if __name__ == "__main__":
