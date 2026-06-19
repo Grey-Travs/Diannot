@@ -266,6 +266,33 @@ def flashcards(
 
 
 @app.command()
+def review(
+    deck_path: Path = typer.Argument(..., exists=True, help="A deck JSON (from `flashcards`)."),
+    limit: int = typer.Option(20, "--limit", help="Max cards to review this session."),
+) -> None:
+    """Review due flashcards using spaced repetition (SM-2)."""
+    from .cards import load_deck, save_deck
+    from .srs import GRADES, deck_stats, due_cards, review_card
+
+    deck = load_deck(deck_path)
+    stats = deck_stats(deck)
+    typer.echo(f"{deck.name}: {stats['total']} cards · {stats['new']} new · {stats['due']} due")
+    queue = due_cards(deck)[:limit]
+    if not queue:
+        typer.secho("Nothing due — come back later. \U0001F389", fg="green")
+        return
+
+    for i, card in enumerate(queue, start=1):
+        typer.echo(f"\n[{i}/{len(queue)}] {typer.style(card.front, bold=True)}")
+        typer.prompt("  (Enter to reveal)", default="", show_default=False)
+        typer.secho(f"  → {card.back}", fg="cyan")
+        grade = typer.prompt("  grade [again/hard/good/easy]", default="good").strip().lower()
+        review_card(card, GRADES.get(grade, 4))
+        save_deck(deck, deck_path)
+    typer.secho("\nSession complete — progress saved.", fg="green")
+
+
+@app.command()
 def edit(
     note_path: Path = typer.Argument(..., exists=True, help="Note JSON to edit."),
     port: int = typer.Option(8080, "--port", help="Port for the editor server."),
