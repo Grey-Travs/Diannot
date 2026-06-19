@@ -110,7 +110,9 @@ Plain files → git-friendly, portable, local-first.
   fallback), Word/PowerPoint, batch-folder ingest, source-page links, confidence flags.
 - **Phase 3 (done):** NiceGUI editor (`diannot edit`), `pro_infographic` pack, Mermaid +
   KaTeX rendering (included only when a note uses them).
-- Phase 4: study features (flashcards, SRS, Anki export, quizzes, glossary, FTS5 search).
+- **Phase 4 (done):** study features — flashcards (`flashcards`), spaced repetition
+  (`review`, SM-2), Anki export (`anki`), AI quizzes (`quiz`), glossary (`glossary`),
+  full-text search (`index`/`search`, SQLite FTS5).
 - Phase 5: polish (theme/plugin system, packaging, tests + CI, Docker, a11y, docs).
 
 ## Conventions

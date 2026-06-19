@@ -65,7 +65,18 @@ uv run diannot edit examples/circulatory.json
 Open the resulting `output/*.html` in any browser.
 
 `diagram` blocks render as Mermaid and `$…$` / `$$…$$` math via KaTeX (pulled in only
-when a note uses them). Optional extras: `ocr` (offline Tesseract) and `editor` (NiceGUI).
+when a note uses them). Optional extras: `ocr` (offline Tesseract), `editor` (NiceGUI),
+`anki` (genanki).
+
+### Study features
+```bash
+uv run diannot flashcards examples/circulatory.json --html   # extract a deck (+ flip-card study view)
+uv run diannot review examples/circulatory.deck.json         # spaced-repetition session (SM-2)
+uv run diannot anki examples/circulatory.deck.json           # export to Anki .apkg (needs --extra anki)
+uv run diannot quiz examples/circulatory.json -n 6           # AI multiple-choice quiz (interactive HTML)
+uv run diannot glossary ./notebook                           # alphabetized glossary across notes
+uv run diannot index ./notebook && uv run diannot search "myocardium"   # full-text search (FTS5)
+```
 
 Available themes live in `src/diannot/themes/` (`circulatory`, `histology` so far —
 add a new one by dropping in a TOML file). Fonts are bundled locally (OFL `woff2`) and
