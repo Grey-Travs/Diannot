@@ -164,10 +164,10 @@ def _note_from_response(
         return None, str(exc)[:1500]
 
 
-def _options(model: str, stderr_sink) -> ClaudeAgentOptions:
+def _options(model: str, system: str, stderr_sink) -> ClaudeAgentOptions:
     return ClaudeAgentOptions(
         model=model,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system,
         allowed_tools=[],
         max_turns=1,
         setting_sources=[],  # ignore project/user/local settings for a clean call
@@ -196,20 +196,55 @@ async def _collect(messages) -> str:
     return text
 
 
-async def _run_text(prompt: str, model: str) -> tuple[str, list[str]]:
+async def _run_text(prompt: str, model: str, system: str = SYSTEM_PROMPT) -> tuple[str, list[str]]:
     stderr: list[str] = []
-    text = await _collect(query(prompt=prompt, options=_options(model, stderr.append)))
+    text = await _collect(query(prompt=prompt, options=_options(model, system, stderr.append)))
     return text, stderr
 
 
-async def _run_multimodal(content: list[dict], model: str) -> tuple[str, list[str]]:
+async def _run_multimodal(
+    content: list[dict], model: str, system: str = SYSTEM_PROMPT
+) -> tuple[str, list[str]]:
     stderr: list[str] = []
 
     async def _stream():
         yield {"type": "user", "message": {"role": "user", "content": content}}
 
-    text = await _collect(query(prompt=_stream(), options=_options(model, stderr.append)))
+    text = await _collect(query(prompt=_stream(), options=_options(model, system, stderr.append)))
     return text, stderr
+
+
+def complete_json(
+    system: str,
+    prompt: str,
+    model: str | None = None,
+    settings: Settings | None = None,
+    max_retries: int = 2,
+) -> dict:
+    """Generic structured call: return the parsed JSON object from the model.
+
+    Used by flashcard/quiz generation. Retries on non-JSON output.
+    """
+    settings = settings or Settings()
+    model = model or settings.models.structure
+    last_error = "unknown error"
+    for attempt in range(max_retries + 1):
+        attempt_prompt = prompt
+        if attempt:
+            attempt_prompt += (
+                f"\n\nYour previous response was invalid ({last_error}). "
+                "Return ONLY a single valid JSON object."
+            )
+        text, _ = asyncio.run(_run_text(attempt_prompt, model, system=system))
+        if not text:
+            last_error = "empty response"
+            continue
+        data = _extract_json(text)
+        if not isinstance(data, dict):
+            last_error = "response was not a JSON object"
+            continue
+        return data
+    raise RuntimeError(f"JSON completion failed after {max_retries + 1} attempt(s): {last_error}")
 
 
 def _failure(max_retries: int, last_error: str, last_stderr: list[str]) -> RuntimeError:

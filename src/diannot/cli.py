@@ -215,6 +215,57 @@ def render(
 
 
 @app.command()
+def flashcards(
+    source: Path = typer.Argument(..., exists=True, help="A note JSON or a notebook folder."),
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Deck JSON path (default: <source>.deck.json)."),
+    theme: str = typer.Option("circulatory", "--theme", "-t", help="Theme for the HTML study view."),
+    html: bool = typer.Option(False, "--html", help="Also write an HTML flip-card study view."),
+    ai: bool = typer.Option(False, "--ai", help="Augment with AI-generated cards (uses Claude)."),
+    model: Optional[str] = typer.Option(None, "--model", help="Override the model for --ai."),
+) -> None:
+    """Build a flashcard deck from a note or notebook (term-definitions; --ai for more)."""
+    from .cards import (
+        Deck,
+        cards_from_note,
+        generate_cards_ai,
+        load_deck,
+        merge_cards,
+        render_deck_html,
+        save_deck,
+    )
+
+    settings = Settings()
+    if source.is_dir():
+        notes = [(p, Note.model_validate_json(p.read_text(encoding="utf-8")))
+                 for p in sorted(source.glob("**/*.note.json"))]
+        deck_name, default_out = source.name, source / f"{source.name}.deck.json"
+    else:
+        note = Note.model_validate_json(source.read_text(encoding="utf-8"))
+        notes, deck_name, default_out = [(source, note)], note.title, source.with_suffix(".deck.json")
+    if not notes:
+        typer.secho("No notes found.", fg="red")
+        raise typer.Exit(1)
+
+    out = out or default_out
+    deck = load_deck(out) if out.exists() else Deck(name=deck_name)
+    new_cards = []
+    for _, note in notes:
+        new_cards += cards_from_note(note)
+        if ai:
+            try:
+                new_cards += generate_cards_ai(note, model=model, settings=settings)
+            except Exception as exc:
+                typer.secho(f"  AI generation failed for '{note.title}': {exc}", fg="yellow")
+    merge_cards(deck, new_cards)
+    save_deck(deck, out)
+    typer.echo(f"Deck: {len(deck.cards)} cards -> {out}")
+    if html:
+        html_path = out.with_suffix(".html")
+        html_path.write_text(render_deck_html(deck, theme_name=theme, settings=settings), encoding="utf-8")
+        typer.echo(f"Study view -> {html_path}")
+
+
+@app.command()
 def edit(
     note_path: Path = typer.Argument(..., exists=True, help="Note JSON to edit."),
     port: int = typer.Option(8080, "--port", help="Port for the editor server."),
