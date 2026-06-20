@@ -41,7 +41,7 @@ class ProvidersCfg(BaseModel):
     notes: str = "claude"  # "claude" | "ollama"
     study: str = "claude"  # "claude" | "ollama"
     ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5"
+    ollama_model: str = "qwen2.5:3b"  # good quality + ~1.5 min/note on a laptop CPU
     ollama_vision_model: str = "llama3.2-vision"
 
 

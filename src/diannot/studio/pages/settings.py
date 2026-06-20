@@ -49,8 +49,8 @@ def settings_page() -> None:
 
             with ui.expansion("Local model (Ollama) setup", icon="dns").classes("w-full"):
                 ui.label("Install Ollama from ollama.com and start it, then pull a model — e.g. run:  "
-                         "ollama pull qwen2.5  (qwen2.5 is a good default; qwen2.5:3b or llama3.2:3b "
-                         "are lighter). No key, fully offline.").classes("text-caption text-grey")
+                         "ollama pull qwen2.5:3b  (recommended: good structure, ~1.5 min/note on a "
+                         "laptop CPU; the 7B 'qwen2.5' is much slower). No key, fully offline.").classes("text-caption text-grey")
                 host = ui.input(label="Ollama address", value=settings.providers.ollama_host).classes("w-80")
                 omodel = ui.select([settings.providers.ollama_model], value=settings.providers.ollama_model,
                                    label="Local model", with_input=True,
