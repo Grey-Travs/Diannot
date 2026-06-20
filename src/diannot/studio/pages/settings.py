@@ -5,6 +5,7 @@ from nicegui import app, ui
 
 from ...config import Settings, update_config
 from ...providers import ollama_available, ollama_models
+from .. import usage
 from ..background import run_blocking
 from ..credentials import connection_status, persist_key, set_api_key, test_connection
 from ..layout import studio_layout
@@ -37,6 +38,14 @@ def settings_page() -> None:
                                      label="Make-notes engine").classes("w-80")
             study_engine = ui.select(_ENGINES, value=settings.providers.study,
                                      label="Study (quiz / flashcards) engine").classes("w-80")
+
+            with ui.row().classes("items-center gap-3"):
+                budget = ui.number(label="Monthly study budget", value=usage.cap(),
+                                   min=1, max=10000).props("dense").classes("w-48")
+                budget.on_value_change(lambda e: usage.set_cap(int(e.value or usage.DEFAULT_CAP)))
+                ui.label(f"Used this month: {usage.used()}").classes("text-caption text-grey")
+            ui.label("A soft cap on quiz / flashcard generations (we can't read a provider's real "
+                     "balance). Resets monthly; the Study page shows the count.").classes("text-caption text-grey")
 
             with ui.expansion("Local model (Ollama) setup", icon="dns").classes("w-full"):
                 ui.label("Install Ollama from ollama.com and start it, then pull a model — e.g. run:  "

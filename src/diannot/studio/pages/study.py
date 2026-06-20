@@ -12,6 +12,7 @@ from ...glossary import build_glossary
 from ...models import Note
 from ...quiz import generate_quiz
 from ...srs import GRADES, deck_stats, due_cards, review_card
+from .. import usage
 from ..background import run_blocking
 from ..layout import studio_layout
 
@@ -93,6 +94,7 @@ def _flashcards_tab(note: Note, note_path: Path, settings: Settings) -> None:
         if use_ai:
             try:
                 new += await run_blocking(generate_cards_ai, note, None, settings)
+                usage.record_study()
             except Exception as exc:
                 ui.notify(f"AI cards failed: {exc}", type="warning", multi_line=True)
         merge_cards(deck, new)
@@ -144,6 +146,7 @@ def _quiz_tab(note: Note, note_path: Path, settings: Settings) -> None:
         except Exception as exc:
             ui.notify(f"Quiz failed: {exc}", type="negative", multi_line=True)
             return
+        usage.record_study()
         quiz_path.write_text(quiz.model_dump_json(indent=2), encoding="utf-8")
         ui.notify("Quiz ready!", type="positive")
         render()
@@ -189,6 +192,17 @@ def study_page(path: str = "") -> None:
     with ui.row().classes("items-center gap-2 w-full p-2"):
         ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/")).props("flat round dense")
         ui.label(f"Study — {note.title}").classes("text-h6")
+        ui.space()
+        meter = ui.label().classes("text-caption")
+
+        def _refresh_meter() -> None:
+            u, c = usage.used(), usage.cap()
+            meter.text = f"📚 {u} / {c} study generations this month"
+            color = "#c62828" if u >= c else ("#ef6c00" if u >= c * 0.8 else "#9e9e9e")
+            meter.style(f"color:{color}")
+
+        ui.timer(2.0, _refresh_meter)
+        _refresh_meter()
 
     with ui.tabs().classes("w-full") as tabs:
         t_cards = ui.tab("Flashcards", icon="style")
