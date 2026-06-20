@@ -19,9 +19,17 @@ for pkg in ("nicegui", "pywebview", "playwright"):
     binaries += b
     hiddenimports += h
 
-# Data-only collection: keeps _bundled/claude.exe, diannot themes/packs/fonts, certs.
-for pkg in ("claude_agent_sdk", "diannot", "certifi"):
+# Data-only collection: diannot themes/packs/fonts + certs.
+for pkg in ("diannot", "certifi"):
     datas += collect_data_files(pkg)
+
+# Claude Agent SDK: keep the python package (so `import claude_agent_sdk` works) but DROP its
+# bundled CLI `_bundled/claude.exe` (~214 MB). The released build defaults to Gemini/Ollama, so
+# the Claude *engine* isn't used here; this nearly halves the download.
+datas += [
+    (src, dst) for (src, dst) in collect_data_files("claude_agent_sdk")
+    if "_bundled" not in src.replace("\\", "/").lower()
+]
 
 # Repo-root sample notebook (resolved at runtime via sys._MEIPASS).
 datas += [("examples/sample_notebook", "examples/sample_notebook")]
@@ -62,6 +70,6 @@ exe = EXE(
     name="DiannotStudio",
     console=False,  # windowed app — no console window
     disable_windowed_traceback=False,
-    icon=None,
+    icon="assets/diannot.ico",
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="DiannotStudio")
