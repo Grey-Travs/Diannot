@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from nicegui import app, ui
 
+from .styles import inject_global
+
 NAV = [
     ("Home", "/", "home"),
     ("Make notes", "/import", "auto_awesome"),
@@ -24,6 +26,7 @@ def studio_layout(active: str = "") -> None:
     app.storage.general.setdefault("dark", False)
     ui.colors(primary="#6B4B90", secondary="#E7799B", accent="#E7799B")
     ui.dark_mode().bind_value(app.storage.general, "dark")
+    inject_global()  # shared fonts + soft background + card styling, app-wide
     # behavior=desktop keeps the drawer pinned (Quasar otherwise auto-hides it on narrow
     # widths with no way back); the header hamburger is the deliberate show/hide.
     drawer = ui.left_drawer(value=True).props("width=220 behavior=desktop bordered")

@@ -63,7 +63,8 @@ def _review_session(area, deck, deck_path, queue, on_done) -> None:
 
 def _flashcards_tab(note: Note, note_path: Path, settings: Settings) -> None:
     deck_path = _sibling(note_path, ".deck.json")
-    area = ui.column().classes("w-full gap-2")
+    with ui.card().classes("w-full p-4"):
+        area = ui.column().classes("w-full gap-2")
 
     def load_or_new() -> Deck:
         return load_deck(deck_path) if deck_path.exists() else Deck(name=note.title)
@@ -126,7 +127,8 @@ def _flashcards_tab(note: Note, note_path: Path, settings: Settings) -> None:
 
 def _quiz_tab(note: Note, note_path: Path, settings: Settings) -> None:
     quiz_path = _sibling(note_path, ".quiz.json")
-    area = ui.column().classes("w-full gap-2")
+    with ui.card().classes("w-full p-4"):
+        area = ui.column().classes("w-full gap-2")
 
     def render() -> None:
         area.clear()
@@ -156,7 +158,8 @@ def _quiz_tab(note: Note, note_path: Path, settings: Settings) -> None:
 
 def _glossary_tab(note: Note, note_path: Path, settings: Settings) -> None:
     gloss_path = _sibling(note_path, ".glossary.note.json")
-    area = ui.column().classes("w-full gap-2")
+    with ui.card().classes("w-full p-4"):
+        area = ui.column().classes("w-full gap-2")
 
     def render() -> None:
         area.clear()

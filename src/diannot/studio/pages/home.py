@@ -203,7 +203,11 @@ def home_page() -> None:
         terms = sum(1 for b in note.blocks if getattr(b, "type", "") == "term_definition")
         rows.append((path, note, cards, due, terms))
 
-    continue_row = max(rows, key=lambda r: Path(r[0]).stat().st_mtime) if rows else None
+    # "Continue studying": prefer a note with cards due, else the most-recently-edited.
+    continue_row = None
+    if rows:
+        pool = [r for r in rows if r[3] > 0] or rows  # r[3] = due count
+        continue_row = max(pool, key=lambda r: Path(r[0]).stat().st_mtime)
 
     with ui.element("div").classes("dn-main"):
         # ---- welcome hero ----
