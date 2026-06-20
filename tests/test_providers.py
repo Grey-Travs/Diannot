@@ -120,6 +120,39 @@ def test_embedded_defaults_seed_gemini(tmp_path, monkeypatch):
     assert config.load_config_file(tmp_path / "diannot.toml")["providers"]["notes"] == "gemini"
 
 
+def test_gemini_complete_non_json_is_friendly(monkeypatch):
+    import pytest
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=0: _FakeResp(b"<html>not json</html>"))
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        P.gemini_complete("s", "p", "gemini-2.5-flash", "AIza-key")
+
+
+def test_gemini_complete_safety_block_is_friendly(monkeypatch):
+    import pytest
+    body = json.dumps({"candidates": [{"finishReason": "SAFETY"}]}).encode()
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=0: _FakeResp(body))
+    with pytest.raises(RuntimeError, match="declined"):
+        P.gemini_complete("s", "p", "gemini-2.5-flash", "AIza-key")
+
+
+def test_credentials_merge_preserves_and_escapes(tmp_path, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    from diannot.studio import credentials as C
+    C.persist_key("sk-ant-123")
+    C.persist_gemini_key('weird"key\\value')  # contains a quote + backslash
+    creds = C._read_creds()
+    assert creds["anthropic_api_key"] == "sk-ant-123"  # not clobbered by the 2nd write
+    assert creds["gemini_api_key"] == 'weird"key\\value'  # escaped + round-trips intact
+
+
+def test_settings_reads_dynamic_config_path(tmp_path, monkeypatch):
+    from diannot import config
+    toml = tmp_path / "diannot.toml"
+    toml.write_text('[providers]\nnotes = "gemini"\n', encoding="utf-8")
+    monkeypatch.setattr(config, "_config_path", lambda: toml)
+    assert config.Settings().providers.notes == "gemini"
+
+
 def test_embedded_defaults_absent_in_dev():
     """No _embedded.py in the repo -> loader is a no-op (bring-your-own-key)."""
     from diannot.studio import credentials

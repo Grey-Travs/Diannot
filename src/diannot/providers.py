@@ -69,7 +69,7 @@ def ollama_complete(
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "ignore")[:300]
         raise RuntimeError(
@@ -92,6 +92,10 @@ def ollama_complete(
             f"Couldn't reach Ollama at {host}. Install it from https://ollama.com, start it, "
             f"then run:  ollama pull {model}"
         ) from exc
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        raise RuntimeError(f"Ollama sent an unexpected (non-JSON) response from '{model}'. Try again.") from None
     return (data.get("message") or {}).get("content", "") or ""
 
 
@@ -127,7 +131,7 @@ def gemini_complete(
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:  # key not echoed (no `from exc`)
         if exc.code in (400, 401, 403):
             raise RuntimeError("Gemini rejected the request — the API key looks bad or expired. "
@@ -141,7 +145,20 @@ def gemini_complete(
             raise RuntimeError("Gemini timed out — check your internet connection and try again.") from None
         raise RuntimeError("Couldn't reach Gemini — check your internet connection.") from None
     try:
-        chunks = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", []) or []
+        data = json.loads(raw)
+    except ValueError:
+        raise RuntimeError("Gemini sent an unexpected (non-JSON) response. Try again in a moment.") from None
+    cands = data.get("candidates") or []
+    reason = cands[0].get("finishReason") if cands else None
+    if (data.get("promptFeedback") or {}).get("blockReason") or reason in (
+        "SAFETY", "RECITATION", "PROHIBITED_CONTENT", "BLOCKLIST"
+    ):
+        raise RuntimeError("Gemini declined this content (safety filter). Try different source text.")
+    if reason == "MAX_TOKENS":
+        raise RuntimeError("Gemini's reply was cut off (the document is too long for one note). "
+                           "Try importing fewer pages at a time.")
+    try:
+        chunks = (cands or [{}])[0].get("content", {}).get("parts", []) or []
         return "".join(p.get("text", "") for p in chunks if isinstance(p, dict)).strip()
     except (IndexError, AttributeError, KeyError):
         return ""

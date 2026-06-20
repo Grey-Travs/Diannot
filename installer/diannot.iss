@@ -13,6 +13,10 @@
 #define AppPublisher "Diannot"
 
 [Setup]
+; Resolve all relative paths (Source/SetupIconFile/OutputDir) from the REPO ROOT, not from
+; this script's folder (installer\). Inno's SourceDir defaults to the .iss directory, so without
+; this the dist\/assets\ paths below would wrongly point at installer\dist, installer\assets, etc.
+SourceDir=..
 ; A fixed AppId keeps upgrades/uninstall clean across versions — do not change it.
 AppId={{A7E4C1B2-9D3F-4E8A-B6C5-1F2D3A4B5C6D}
 AppName={#AppName}

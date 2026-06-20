@@ -33,6 +33,16 @@ from . import providers as _providers
 from .config import Settings
 from .models import Note
 
+try:
+    from claude_agent_sdk import CLINotFoundError as _CLINotFound
+except Exception:  # SDK build without this exception class
+    _CLINotFound = None
+
+_CLAUDE_MISSING = (
+    "This build doesn't include the Claude engine. In Settings, pick Gemini (free) "
+    "or a local Ollama model."
+)
+
 SYSTEM_PROMPT = """\
 You are a study-notes structuring engine. You convert source study material — messy \
 extracted text OR images of textbook/lecture pages — into a STRUCTURED JSON document of \
@@ -228,7 +238,12 @@ def _gen_text(prompt: str, model: str, settings: Settings, provider: str, system
     if provider == "gemini":
         cfg = settings.providers
         return _providers.gemini_complete(system, prompt, cfg.gemini_model, os.environ.get("GEMINI_API_KEY", "")), []
-    return asyncio.run(_run_text(prompt, model, system=system))
+    try:
+        return asyncio.run(_run_text(prompt, model, system=system))
+    except Exception as exc:
+        if _CLINotFound is not None and isinstance(exc, _CLINotFound):
+            raise RuntimeError(_CLAUDE_MISSING) from None
+        raise
 
 
 def _gen_vision(
@@ -247,7 +262,12 @@ def _gen_vision(
                 SYSTEM_PROMPT, prompt_text, cfg.gemini_model, os.environ.get("GEMINI_API_KEY", ""), images=b64
             )
         return text, []
-    return asyncio.run(_run_multimodal(content, model))
+    try:
+        return asyncio.run(_run_multimodal(content, model))
+    except Exception as exc:
+        if _CLINotFound is not None and isinstance(exc, _CLINotFound):
+            raise RuntimeError(_CLAUDE_MISSING) from None
+        raise
 
 
 def complete_json(
@@ -283,17 +303,18 @@ def complete_json(
     raise RuntimeError(f"JSON completion failed after {max_retries + 1} attempt(s): {last_error}")
 
 
-def _failure(max_retries: int, last_error: str, last_stderr: list[str]) -> RuntimeError:
+def _failure(max_retries: int, last_error: str, last_stderr: list[str], provider: str = "claude") -> RuntimeError:
     hint = ""
     if last_stderr:
         tail = " | ".join(s.strip() for s in last_stderr[-4:] if s.strip())
         if tail:
             hint = f"\nLast CLI stderr: {tail}"
+    advice = {
+        "gemini": "Check your internet connection and the Gemini key in Settings.",
+        "ollama": "Make sure Ollama is running and the model is pulled (Settings → AI engine).",
+    }.get(provider, "If this is an auth problem, ensure the Claude Code CLI is logged in or set ANTHROPIC_API_KEY.")
     return RuntimeError(
-        f"Structuring failed after {max_retries + 1} attempt(s). "
-        f"Last error: {last_error}{hint}\n"
-        "If this is an auth problem, ensure the Claude Code CLI is logged in or "
-        "set ANTHROPIC_API_KEY."
+        f"Structuring failed after {max_retries + 1} attempt(s). Last error: {last_error}{hint}\n{advice}"
     )
 
 
@@ -325,7 +346,7 @@ def structure_text(
         note, last_error = _note_from_response(text, title, theme, pack)
         if note is not None:
             return note
-    raise _failure(max_retries, last_error, last_stderr)
+    raise _failure(max_retries, last_error, last_stderr, settings.providers.notes)
 
 
 def structure_image(
@@ -382,4 +403,4 @@ def structure_image(
                 for block in note.blocks:
                     block.source_page = source_pages[0]
             return note
-    raise _failure(max_retries, last_error, last_stderr)
+    raise _failure(max_retries, last_error, last_stderr, provider)

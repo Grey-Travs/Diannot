@@ -36,11 +36,22 @@ def launch_studio(
     load_persisted_key()
     load_persisted_gemini_key()
     load_embedded_defaults()  # release build: bundled free Gemini key + Gemini-by-default
+    # Prefer the native window, but degrade to the browser if pywebview/WebView2 is unavailable.
+    if native:
+        try:
+            import webview  # noqa: F401  — pywebview must import for a native window
+        except Exception:
+            native = False
     run_kwargs = dict(host=host, port=port, show=show, reload=False, title="Diannot Studio", favicon="📚")
     try:
         ui.run(native=native, **run_kwargs)
+    except SystemExit as exc:
+        # NiceGUI calls sys.exit(1) when the native window can't open; a clean close is code 0/None.
+        if native and exc.code:
+            ui.run(native=False, **run_kwargs)
+        else:
+            raise
     except Exception:
         if not native:
             raise
-        # The native window (WebView2) couldn't open — fall back to the browser.
         ui.run(native=False, **run_kwargs)

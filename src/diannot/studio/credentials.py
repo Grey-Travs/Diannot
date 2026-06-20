@@ -12,6 +12,8 @@ import os
 import tomllib
 from pathlib import Path
 
+from ..config import _toml_scalar
+
 
 def _config_dir() -> Path:
     base = os.environ.get("APPDATA") or os.path.expanduser("~/.config")
@@ -35,9 +37,9 @@ def _read_creds() -> dict:
 def _write_creds(updates: dict) -> None:
     """Merge ``updates`` into credentials.toml, preserving the other saved keys."""
     data = _read_creds()
-    data.update({k: v for k, v in updates.items() if v})
+    data.update({k: str(v).replace("\n", " ").replace("\r", " ") for k, v in updates.items() if v})
     _config_dir().mkdir(parents=True, exist_ok=True)
-    lines = [f'{k} = "{v}"' for k, v in data.items()]
+    lines = [f"{k} = {_toml_scalar(v)}" for k, v in data.items()]  # escapes quotes/backslashes
     _cred_file().write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

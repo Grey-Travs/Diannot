@@ -79,7 +79,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="DIANNOT_",
         env_nested_delimiter="__",
-        toml_file=str(_config_path()),
         extra="ignore",
     )
 
@@ -97,10 +96,12 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Resolve the toml path at instantiation (dynamic), so a Settings() read always matches
+        # what update_config() writes — both go through _config_path().
         return (
             init_settings,
             env_settings,
-            TomlConfigSettingsSource(settings_cls),
+            TomlConfigSettingsSource(settings_cls, toml_file=_config_path()),
             file_secret_settings,
         )
 
