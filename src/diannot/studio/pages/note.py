@@ -13,10 +13,11 @@ import uuid
 from pathlib import Path
 from urllib.parse import quote
 
-from nicegui import ui
+from nicegui import app, ui
 
 from ...config import Settings
 from ...editor import BLOCK_TYPES, _new_block
+from ...io_utils import atomic_write_text
 from ...models import ListItem, Note
 from ...render import render_note_html
 from ..background import run_blocking
@@ -79,7 +80,7 @@ def note_page(path: str = "") -> None:
     settings = Settings()
     token = uuid.uuid4().hex
     LIVE[token] = note
-    state = {"v": 0}
+    state = {"v": 0, "dirty": False, "ready": False}
     bodies: list = []  # the (hidden) edit forms, for collapse/expand all
     assets_dir = note_path.parent / f"{note_path.stem}.assets"
     themes = sorted(p.stem for p in settings.paths.themes_dir.glob("*.toml"))
@@ -89,10 +90,17 @@ def note_page(path: str = "") -> None:
     block_col: ui.row
     preview_frame: ui.element
 
+    def _update_status() -> None:
+        save_label.text = "Unsaved changes…" if state["dirty"] else "All changes saved"
+        save_label.style("color:#E7799B" if state["dirty"] else "color:#9b96a8")
+
     def refresh() -> None:
         state["v"] += 1
         preview_frame._props["src"] = f"/preview/live?token={token}&v={state['v']}"
         preview_frame.update()
+        if state["ready"]:  # ignore the initial render; mark real edits dirty for autosave
+            state["dirty"] = True
+            _update_status()
 
     def rebuild() -> None:
         bodies.clear()
@@ -138,9 +146,17 @@ def note_page(path: str = "") -> None:
         note.blocks.append(_new_block(kind_value))
         rebuild()
 
-    def save() -> None:
-        note_path.write_text(note.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
-        ui.notify(f"Saved {note_path.name}", type="positive")
+    def save(notify: bool = True) -> None:
+        atomic_write_text(note_path, note.model_dump_json(indent=2, exclude_none=True))
+        state["dirty"] = False
+        if state["ready"]:
+            _update_status()
+        if notify:
+            ui.notify(f"Saved {note_path.name}", type="positive")
+
+    def _autosave() -> None:
+        if state["dirty"]:
+            save(notify=False)
 
     def on_reorder(e) -> None:
         old, new = e.args["oldIndex"], e.args["newIndex"]
@@ -278,21 +294,30 @@ def note_page(path: str = "") -> None:
     def _confirm_delete_note() -> None:
         with ui.dialog() as dlg, ui.card().classes("p-4 gap-2"):
             ui.label(f"Delete “{note.title}”?").classes("text-subtitle1")
-            ui.label("This also removes its flashcards, quiz, glossary and images.").classes("text-caption text-grey")
+            ui.label("Moves it (and its flashcards, quiz, glossary, images) to the trash — "
+                     "undo from Home.").classes("text-caption text-grey")
+
+            def _do_del() -> None:
+                trash = delete_note(str(note_path))
+                if trash:
+                    app.storage.general["_undo_delete"] = {"trash": trash, "title": note.title}
+                ui.navigate.to("/")
+
             with ui.row().classes("justify-end gap-2 w-full"):
                 ui.button("Cancel", on_click=dlg.close).props("flat no-caps")
-                ui.button("Delete", icon="delete",
-                          on_click=lambda: (delete_note(str(note_path)), ui.navigate.to("/"))).props("color=negative no-caps")
+                ui.button("Delete", icon="delete", on_click=_do_del).props("color=negative no-caps")
         dlg.open()
 
     # ---- toolbar ----
     with ui.row().classes("items-center gap-2 w-full p-2"):
-        ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/")).props("flat round dense")
+        ui.button(icon="arrow_back",
+                  on_click=lambda: (save(notify=False), ui.navigate.to("/"))).props("flat round dense")
         ui.label(note_path.name).classes("text-subtitle1")
+        save_label = ui.label("All changes saved").classes("text-caption").style("color:#9b96a8")
         ui.space()
         ui.select(themes, label="Theme").bind_value(note, "theme").on_value_change(refresh).props("dense outlined")
         ui.select(packs, label="Pack").bind_value(note, "pack").on_value_change(refresh).props("dense outlined")
-        ui.button("Save", icon="save", on_click=save).props("color=positive no-caps")
+        ui.button("Save", icon="save", on_click=lambda: save()).props("color=positive no-caps")
         ui.button("PDF", icon="picture_as_pdf", on_click=lambda: export("pdf")).props("outline no-caps")
         ui.button("PNG", icon="image", on_click=lambda: export("png")).props("outline no-caps")
         ui.button(icon="delete", on_click=_confirm_delete_note).props("outline color=negative no-caps")
@@ -318,10 +343,30 @@ def note_page(path: str = "") -> None:
             preview_frame._props["src"] = f"/preview/live?token={token}&v=0"
 
     rebuild()
+    state["ready"] = True
     ui.timer(0.3, lambda: ui.run_javascript(_SORTABLE_INIT), once=True)
+    ui.timer(1.5, _autosave)  # crash-safe autosave shortly after any edit
 
-    # Free the live note when the tab disconnects (best-effort).
+    # Ctrl+S saves (and stop the browser's own save dialog in web mode).
+    ui.add_head_html("<script>document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&"
+                     "(e.key==='s'||e.key==='S')){e.preventDefault();}});</script>")
+
+    def _on_key(e) -> None:
+        if e.action.keydown and (e.modifiers.ctrl or e.modifiers.meta) and e.key == "s":
+            save()
+
+    ui.keyboard(on_key=_on_key)
+
+    # Save any unsaved edits + free the live note when the tab/window closes (best-effort).
+    def _on_disconnect() -> None:
+        if state.get("dirty"):
+            try:
+                save(notify=False)
+            except Exception:
+                pass
+        LIVE.pop(token, None)
+
     try:
-        ui.context.client.on_disconnect(lambda: LIVE.pop(token, None))
+        ui.context.client.on_disconnect(_on_disconnect)
     except Exception:
         pass

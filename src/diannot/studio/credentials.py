@@ -36,11 +36,12 @@ def _read_creds() -> dict:
 
 def _write_creds(updates: dict) -> None:
     """Merge ``updates`` into credentials.toml, preserving the other saved keys."""
+    from ..io_utils import atomic_write_text
+
     data = _read_creds()
     data.update({k: str(v).replace("\n", " ").replace("\r", " ") for k, v in updates.items() if v})
-    _config_dir().mkdir(parents=True, exist_ok=True)
     lines = [f"{k} = {_toml_scalar(v)}" for k, v in data.items()]  # escapes quotes/backslashes
-    _cred_file().write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(_cred_file(), "\n".join(lines) + "\n")
 
 
 def set_api_key(key: str) -> None:

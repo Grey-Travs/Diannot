@@ -9,6 +9,7 @@ from nicegui import ui
 from ...cards import Deck, cards_from_note, generate_cards_ai, load_deck, merge_cards, save_deck
 from ...config import Settings
 from ...glossary import build_glossary
+from ...io_utils import atomic_write_text
 from ...models import Note
 from ...quiz import generate_quiz
 from ...srs import GRADES, deck_stats, due_cards, review_card
@@ -149,7 +150,7 @@ def _quiz_tab(note: Note, note_path: Path, settings: Settings) -> None:
             ui.notify(f"Quiz failed: {exc}", type="negative", multi_line=True)
             return
         usage.record_study()
-        quiz_path.write_text(quiz.model_dump_json(indent=2), encoding="utf-8")
+        atomic_write_text(quiz_path, quiz.model_dump_json(indent=2))
         ui.notify("Quiz ready!", type="positive")
         render()
 
@@ -171,7 +172,7 @@ def _glossary_tab(note: Note, note_path: Path, settings: Settings) -> None:
 
     def build() -> None:
         glossary = build_glossary([note], title=f"{note.title} — Glossary", theme=note.theme)
-        gloss_path.write_text(glossary.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
+        atomic_write_text(gloss_path, glossary.model_dump_json(indent=2, exclude_none=True))
         ui.notify("Glossary built.", type="positive")
         render()
 

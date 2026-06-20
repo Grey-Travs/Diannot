@@ -15,6 +15,7 @@ from nicegui import app, ui
 
 from ...cards import load_deck
 from ...config import Settings
+from ...io_utils import atomic_write_text
 from ...models import BannerBlock, BodyBlock, Note, ScriptHeadingBlock
 from ...render import load_theme
 from ...srs import due_cards
@@ -22,7 +23,14 @@ from .. import updater
 from ..background import run_blocking
 from ..layout import studio_layout
 from ..onboarding import maybe_first_run
-from ..workspace import SAMPLE_DIR, current_workspace, delete_note, list_notes, set_workspace
+from ..workspace import (
+    SAMPLE_DIR,
+    current_workspace,
+    delete_note,
+    list_notes,
+    restore_note,
+    set_workspace,
+)
 
 _FALLBACK = {"primary": "#6B4B90", "primary_dark": "#57357D", "accent_soft": "#EFEAF5"}
 _THEME_CACHE: dict[str, dict] = {}
@@ -64,6 +72,12 @@ _HOME_CSS = """
   align-items:center;justify-content:center;color:var(--vd);font-family:'Poppins',sans-serif;font-weight:600;
   font-size:14px;cursor:pointer;min-height:150px;transition:background .15s,border-color .15s}
 .dn-newtile:hover{background:#F4F0FA;border-color:var(--v)}
+/* dark mode: flip the custom Home surfaces (the hero gradient already reads fine) */
+.body--dark .dn-main{--ink:#ECEAF1;--muted:#a39db4;--line:#332b4d}
+.body--dark .dn-stat,.body--dark .dn-feature,.body--dark .dn-card{background:#262138;border-color:#332b4d}
+.body--dark .dn-feature .fx{color:#b9b3c6}
+.body--dark .dn-feature .fm,.body--dark .dn-cmeta b{color:#cfc8dc}
+.body--dark .dn-newtile{background:#241f38;border-color:#4a4068;color:#cbb8e6}
 """
 
 
@@ -93,12 +107,14 @@ def _excerpt(note: Note) -> str:
 def _confirm_delete(path: str, title: str) -> None:
     with ui.dialog() as dialog, ui.card().classes("p-4 gap-2"):
         ui.label(f"Delete “{title}”?").classes("text-subtitle1")
-        ui.label("This also removes its flashcards, quiz, glossary and images.").classes("text-caption text-grey")
+        ui.label("Moves it (and its flashcards, quiz, glossary, images) to the trash — "
+                 "you can undo right after.").classes("text-caption text-grey")
 
         def do_delete() -> None:
-            delete_note(path)
+            trash = delete_note(path)
+            if trash:
+                app.storage.general["_undo_delete"] = {"trash": trash, "title": title}
             dialog.close()
-            ui.notify("Note deleted.", type="positive")
             ui.navigate.to("/")
 
         with ui.row().classes("justify-end gap-2 w-full"):
@@ -121,7 +137,7 @@ def _new_note(workspace: Path) -> None:
     while dest.exists():
         dest = Path(workspace) / f"untitled-{n}.note.json"
         n += 1
-    dest.write_text(note.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
+    atomic_write_text(dest, note.model_dump_json(indent=2, exclude_none=True))
     ui.navigate.to(f"/note?path={quote(str(dest))}")
 
 
@@ -215,6 +231,17 @@ def home_page() -> None:
     with ui.element("div").classes("dn-main"):
         update_slot = ui.column().classes("w-full")  # filled by the background update check (installed build)
 
+        # one-time Undo banner after a soft-delete
+        undo = app.storage.general.pop("_undo_delete", None)
+        if undo and undo.get("trash"):
+            with ui.card().classes("w-full p-3").style("background:#FCEBEE;border:1px solid #E7799B;border-radius:14px"):
+                with ui.row().classes("items-center gap-2 w-full no-wrap"):
+                    ui.icon("delete_outline").style("color:#C0354B")
+                    ui.label(f"Deleted “{undo.get('title', 'note')}”").classes("text-bold")
+                    ui.space()
+                    ui.button("Undo", icon="undo",
+                              on_click=lambda t=undo["trash"]: (restore_note(t), ui.navigate.to("/"))).props("flat no-caps color=primary")
+
         # ---- welcome hero ----
         with ui.element("section").classes("dn-hero"):
             ui.element("div").classes("dn-blob")
@@ -224,8 +251,13 @@ def home_page() -> None:
             ui.html(f"<div class='p'>You have <b>{due_txt}</b> today across <b>{len(notes)} note"
                     f"{'s' if len(notes) != 1 else ''}</b>. Pick up where you left off.</div>")
             with ui.row().classes("gap-2"):
+                if total_due:
+                    ui.button(f"Review {total_due} due", icon="school",
+                              on_click=lambda: ui.navigate.to("/review")).props("unelevated no-caps color=white text-color=primary")
                 ui.button("Make notes from a file", icon="auto_awesome",
-                          on_click=lambda: ui.navigate.to("/import")).props("unelevated no-caps color=white text-color=primary")
+                          on_click=lambda: ui.navigate.to("/import")).props(
+                    ("outline" if total_due else "unelevated") + " no-caps color=white"
+                    + ("" if total_due else " text-color=primary"))
                 ui.button("New note", icon="note_add",
                           on_click=lambda: workspace and _new_note(workspace)).props("outline no-caps color=white")
 

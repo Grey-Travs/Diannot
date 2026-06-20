@@ -17,6 +17,7 @@ from .pages import (  # noqa: F401  — registers @ui.page
     home,
     import_,
     note,
+    review_all,
     search,
     settings,
     study,

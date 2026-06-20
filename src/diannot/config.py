@@ -127,16 +127,16 @@ def _toml_scalar(value: object) -> str:
 
 
 def save_config_file(data: dict, path: str | Path | None = None) -> None:
-    """Write a {section: {key: scalar}} dict back to ``diannot.toml``."""
-    p = Path(path or _config_path())
-    p.parent.mkdir(parents=True, exist_ok=True)
+    """Write a {section: {key: scalar}} dict back to ``diannot.toml`` (crash-safe)."""
+    from .io_utils import atomic_write_text
+
     lines: list[str] = []
     for section, table in data.items():
         lines.append(f"[{section}]")
         for key, value in table.items():
             lines.append(f"{key} = {_toml_scalar(value)}")
         lines.append("")
-    p.write_text("\n".join(lines), encoding="utf-8")
+    atomic_write_text(path or _config_path(), "\n".join(lines))
 
 
 def update_config(section: str, values: dict, path: str | Path | None = None) -> None:

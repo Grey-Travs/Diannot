@@ -133,9 +133,9 @@ def load_deck(path: Path | str) -> Deck:
 
 
 def save_deck(deck: Deck, path: Path | str) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(deck.model_dump_json(indent=2), encoding="utf-8")
+    from .io_utils import atomic_write_text
+
+    atomic_write_text(path, deck.model_dump_json(indent=2))
 
 
 def render_deck_html(deck: Deck, theme_name: str = "circulatory", settings: Settings | None = None) -> str:

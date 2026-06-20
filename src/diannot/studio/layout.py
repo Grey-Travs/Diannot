@@ -13,6 +13,7 @@ from .styles import inject_global
 NAV = [
     ("Home", "/", "home"),
     ("Make notes", "/import", "auto_awesome"),
+    ("Review", "/review", "school"),
     ("Search", "/search", "search"),
     ("Settings", "/settings", "settings"),
     ("Help", "/help", "help_outline"),

@@ -19,6 +19,7 @@ from urllib.parse import quote
 from nicegui import background_tasks, ui
 
 from ...config import Settings
+from ...io_utils import atomic_write_text
 from ...pipeline import SUPPORTED_SUFFIXES, decide_mode, ingest_file
 from ..background import run_blocking
 from ..layout import studio_layout
@@ -52,7 +53,7 @@ async def _run_import(workspace: str, job: dict, path: Path, params: dict, setti
         note = await run_blocking(ingest_file, path, settings=settings, **params)
         job["step"] = "Saving your notes…"
         dest = _unique_note_path(workspace, params.get("title") or note.title)
-        dest.write_text(note.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
+        atomic_write_text(dest, note.model_dump_json(indent=2, exclude_none=True))
         job["note_path"] = str(dest)
         job["status"] = "done"
         job["step"] = "Notes ready!"

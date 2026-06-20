@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+import uuid
 from pathlib import Path
 
 from nicegui import app
@@ -54,6 +55,8 @@ def list_notes(workspace: Path | str) -> list[tuple[str, Note]]:
     """Return (absolute_path, Note) for every note under ``workspace``."""
     notes: list[tuple[str, Note]] = []
     for path in sorted(Path(workspace).glob("**/*.note.json")):
+        if ".trash" in path.parts:
+            continue  # soft-deleted notes live here — keep them out of the Library
         try:
             notes.append((str(path), Note.model_validate_json(path.read_text(encoding="utf-8"))))
         except Exception:
@@ -61,18 +64,54 @@ def list_notes(workspace: Path | str) -> list[tuple[str, Note]]:
     return notes
 
 
-def delete_note(note_path: str | Path) -> None:
-    """Delete a note and its sidecars (deck/quiz/glossary/anki + images). Best-effort."""
+def _note_bundle(note_path: Path) -> tuple[list[str], list[str]]:
+    """The file + dir names that make up a note bundle (note, sidecars, assets)."""
+    name = note_path.name
+    # removesuffix-style: "X.glossary.note.json" -> "X.glossary" (Path.stem would be wrong).
+    base = name[: -len(".note.json")] if name.endswith(".note.json") else note_path.stem
+    files = [name, f"{base}.deck.json", f"{base}.quiz.json", f"{base}.glossary.note.json", f"{base}.deck.apkg"]
+    dirs = list({f"{name[: -len('.json')]}.assets", f"{base}.assets"})
+    return files, dirs
+
+
+def delete_note(note_path: str | Path) -> str | None:
+    """Soft-delete: move a note + its sidecars/assets into ``.trash/`` so it's recoverable.
+
+    Returns the trash-bundle path (pass to :func:`restore_note` to undo), or None if it was
+    already gone. The Library skips ``.trash``.
+    """
     p = Path(note_path)
-    name = p.name
-    # Use removesuffix so "X.glossary.note.json" -> "X.glossary" (Path.stem would be wrong).
-    base = name[: -len(".note.json")] if name.endswith(".note.json") else p.stem
-    for fname in (name, f"{base}.deck.json", f"{base}.quiz.json",
-                  f"{base}.glossary.note.json", f"{base}.deck.apkg"):
-        try:
-            (p.parent / fname).unlink(missing_ok=True)
-        except OSError:
-            pass
-    # The editor creates the assets dir from note_path.stem -> "X.note.assets".
-    for dname in {f"{name[: -len('.json')]}.assets", f"{base}.assets"}:
-        shutil.rmtree(p.parent / dname, ignore_errors=True)
+    if not p.exists():
+        return None
+    base = p.name[: -len(".note.json")] if p.name.endswith(".note.json") else p.stem
+    trash = p.parent / ".trash" / f"{base}-{uuid.uuid4().hex[:8]}"
+    trash.mkdir(parents=True, exist_ok=True)
+    files, dirs = _note_bundle(p)
+    for fname in files:
+        src = p.parent / fname
+        if src.exists():
+            shutil.move(str(src), str(trash / fname))
+    for dname in dirs:
+        src = p.parent / dname
+        if src.is_dir():
+            shutil.move(str(src), str(trash / dname))
+    (trash / "_origin.txt").write_text(str(p.parent), encoding="utf-8")
+    return str(trash)
+
+
+def restore_note(trash_dir: str | Path) -> bool:
+    """Move a soft-deleted note bundle back to its original folder. Returns success."""
+    trash = Path(trash_dir)
+    if not trash.exists():
+        return False
+    origin = trash / "_origin.txt"
+    dest = Path(origin.read_text(encoding="utf-8").strip()) if origin.exists() else trash.parent.parent
+    dest.mkdir(parents=True, exist_ok=True)
+    for item in trash.iterdir():
+        if item.name == "_origin.txt":
+            continue
+        target = dest / item.name
+        if not target.exists():  # don't clobber a same-named note created since
+            shutil.move(str(item), str(target))
+    shutil.rmtree(trash, ignore_errors=True)
+    return True
