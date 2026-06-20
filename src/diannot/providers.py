@@ -74,7 +74,18 @@ def ollama_complete(
             f"Ollama returned {exc.code}: {detail}. Is the model '{model}' installed? "
             f"Run:  ollama pull {model}"
         ) from exc
+    except TimeoutError as exc:  # socket read timed out mid-generation (reached Ollama fine)
+        raise RuntimeError(
+            f"Ollama timed out after {int(timeout)}s generating with '{model}'. The model may still be "
+            f"loading, or it's heavy for this machine — try a smaller model (e.g. ollama pull qwen2.5:3b "
+            f"or llama3.2:3b) and pick it in Settings."
+        ) from exc
     except (urllib.error.URLError, OSError) as exc:
+        if isinstance(getattr(exc, "reason", None), TimeoutError):
+            raise RuntimeError(
+                f"Ollama timed out after {int(timeout)}s generating with '{model}'. Try a smaller, "
+                f"faster model (e.g. ollama pull qwen2.5:3b) and pick it in Settings."
+            ) from exc
         raise RuntimeError(
             f"Couldn't reach Ollama at {host}. Install it from https://ollama.com, start it, "
             f"then run:  ollama pull {model}"
