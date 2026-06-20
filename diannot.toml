@@ -1,9 +1,4 @@
-# Diannot configuration. Environment overrides use the DIANNOT_ prefix
-# (e.g. DIANNOT_RENDER__DEFAULT_THEME=histology).
-
 [models]
-# Claude model IDs. Configurable: drop `structure` to a faster model (e.g. claude-haiku-4-5)
-# for cheaper/faster parsing, keep a stronger model for `summarize`.
 structure = "claude-opus-4-8"
 summarize = "claude-opus-4-8"
 
@@ -13,6 +8,9 @@ default_theme = "circulatory"
 pdf_engine = "chromium"
 
 [paths]
-# output_dir is relative to the working directory. themes_dir/packs_dir default to the
-# package's bundled assets if omitted.
 output_dir = "output"
+
+[providers]
+notes = "gemini"
+study = "gemini"
+gemini_model = "gemini-2.5-flash"
