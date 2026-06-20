@@ -30,7 +30,25 @@ uv run pyinstaller diannot_studio.spec --noconfirm
 Remove-Item src\diannot\studio\_embedded.py
 ```
 
-Send friends `dist\installer\DiannotStudio-Setup.exe`.
+Send friends `dist\installer\DiannotStudio-Setup.exe` (first time only — after that they auto‑update).
+
+## Publishing updates (auto‑update via GitHub Releases)
+The app checks **`github.com/Grey-Travs/Diannot` Releases** on launch and offers a one‑click update
+when a newer version exists. To ship an update:
+1. Bump the version in **all three**: `pyproject.toml`, `src/diannot/__init__.py` (`__version__`),
+   and `installer/diannot.iss` (`#define AppVersion`). Use semver, e.g. `0.2.0`.
+2. Rebuild the installer (steps 1–4 above).
+3. On GitHub, create a **Release** tagged `v0.2.0` and **attach `DiannotStudio-Setup.exe`** as a
+   release asset.
+4. Done — installed apps see the new release and prompt "Update available → Update now"; it downloads
+   and runs the new installer, which upgrades in place and keeps each user's notes & settings.
+
+Notes:
+- The **Releases must be public** for friends' apps to read them (a private repo's API needs a token).
+  The repo's *code* can stay private — only the release needs to be reachable; simplest is a public repo.
+- The first build you hand out can be published as `v0.1.0`; future higher tags trigger the update.
+- The check fails closed: no internet / no release / private repo just means "no update offered" — it
+  never breaks the app.
 
 ## What your friends do
 - Double‑click `DiannotStudio-Setup.exe` → Next → Install (no admin prompt; installs to their user

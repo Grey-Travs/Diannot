@@ -5,7 +5,7 @@ from nicegui import app, ui
 
 from ...config import Settings, update_config
 from ...providers import ollama_available, ollama_models
-from .. import credentials, usage
+from .. import credentials, updater, usage
 from ..background import run_blocking
 from ..credentials import (
     connection_status,
@@ -41,6 +41,21 @@ def settings_page() -> None:
             ui.label("Appearance").classes("text-subtitle1 text-bold")
             ui.switch("Dark mode").bind_value(app.storage.general, "dark")
             ui.label("Violet theme. Toggle a dark or light look — it's remembered.").classes("text-caption text-grey")
+
+        # ---- About & updates ----
+        with ui.card().classes("p-4 w-full gap-2"):
+            ui.label("About & updates").classes("text-subtitle1 text-bold")
+            ui.label(f"Diannot Studio v{updater.current_version()}").classes("text-caption text-grey")
+            ustatus = ui.label("").classes("text-caption text-grey")
+
+            async def check_updates() -> None:
+                ustatus.text = "Checking…"
+                info = await run_blocking(updater.check_for_update)
+                ustatus.text = (f"Update available: v{info['version']} — open Home to install it."
+                                if info else "You're on the latest version.")
+
+            ui.button("Check for updates", icon="system_update", on_click=check_updates).props("flat no-caps")
+            ui.label("Updates install in place and keep your notes & settings.").classes("text-caption text-grey")
 
         # ---- AI engine (free / offline option) ----
         with ui.card().classes("p-4 w-full gap-2"):

@@ -7,16 +7,19 @@ quizzes, terms) are computed from the workspace's note + deck sidecar files.
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from urllib.parse import quote
 
-from nicegui import ui
+from nicegui import app, ui
 
 from ...cards import load_deck
 from ...config import Settings
 from ...models import BannerBlock, BodyBlock, Note, ScriptHeadingBlock
 from ...render import load_theme
 from ...srs import due_cards
+from .. import updater
+from ..background import run_blocking
 from ..layout import studio_layout
 from ..onboarding import maybe_first_run
 from ..workspace import SAMPLE_DIR, current_workspace, delete_note, list_notes, set_workspace
@@ -210,6 +213,8 @@ def home_page() -> None:
         continue_row = max(pool, key=lambda r: Path(r[0]).stat().st_mtime)
 
     with ui.element("div").classes("dn-main"):
+        update_slot = ui.column().classes("w-full")  # filled by the background update check (installed build)
+
         # ---- welcome hero ----
         with ui.element("section").classes("dn-hero"):
             ui.element("div").classes("dn-blob")
@@ -275,3 +280,41 @@ def home_page() -> None:
                 with ui.element("div").classes("dn-newtile").on("click", lambda: workspace and _new_note(workspace)):
                     ui.icon("note_add").style("font-size:30px;color:#6B4B90;margin-bottom:8px")
                     ui.label("New blank note")
+
+    # ---- self-update (installed build only): check GitHub Releases, offer a one-click update ----
+    def _show_update_banner(info: dict) -> None:
+        update_slot.clear()
+        with update_slot:
+            with ui.card().classes("w-full p-3").style("background:#EFEAF5;border:1px solid #6B4B90;border-radius:14px"):
+                with ui.row().classes("items-center gap-2 w-full no-wrap"):
+                    ui.icon("system_update").style("color:#57357D;font-size:22px")
+                    ui.label(f"Update available — v{info['version']} (you have v{updater.current_version()})").classes("text-bold")
+                    ui.space()
+                    ui.button("Update now", icon="download",
+                              on_click=lambda: _do_update(info)).props("unelevated no-caps color=primary")
+                    ui.button("Later", on_click=update_slot.clear).props("flat no-caps")
+
+    async def _do_update(info: dict) -> None:
+        update_slot.clear()
+        with update_slot, ui.card().classes("w-full p-3").style("border-radius:14px"):
+            with ui.row().classes("items-center gap-3"):
+                ui.spinner()
+                ui.label("Downloading the update… Diannot will close to finish installing.")
+        try:
+            path = await run_blocking(updater.download_installer, info["url"])
+        except Exception as exc:
+            ui.notify(f"Update download failed: {exc}", type="negative", multi_line=True)
+            _show_update_banner(info)
+            return
+        updater.launch_installer(path)
+        ui.notify("Installer launched — closing to finish updating…", type="positive")
+        await asyncio.sleep(2.0)
+        app.shutdown()
+
+    async def _check_update() -> None:
+        info = await run_blocking(updater.check_for_update)
+        if info:
+            _show_update_banner(info)
+
+    if updater.is_installed_build():
+        ui.timer(1.5, _check_update, once=True)
