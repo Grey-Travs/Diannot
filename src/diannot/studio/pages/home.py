@@ -113,7 +113,9 @@ def _confirm_delete(path: str, title: str) -> None:
         def do_delete() -> None:
             trash = delete_note(path)
             if trash:
-                app.storage.general["_undo_delete"] = {"trash": trash, "title": title}
+                undos = app.storage.general.get("_undo_deletes") or []
+                undos.append({"trash": trash, "title": title})
+                app.storage.general["_undo_deletes"] = undos[-10:]
             dialog.close()
             ui.navigate.to("/")
 
@@ -231,16 +233,24 @@ def home_page() -> None:
     with ui.element("div").classes("dn-main"):
         update_slot = ui.column().classes("w-full")  # filled by the background update check (installed build)
 
-        # one-time Undo banner after a soft-delete
-        undo = app.storage.general.pop("_undo_delete", None)
+        # Undo banner for the most recent soft-delete (a queue, so back-to-back deletes stay undoable)
+        undos = app.storage.general.get("_undo_deletes") or []
+        undo = undos.pop() if undos else None
+        app.storage.general["_undo_deletes"] = undos
         if undo and undo.get("trash"):
+            def _do_undo(t=undo["trash"]) -> None:
+                if restore_note(t):
+                    ui.navigate.to("/")
+                else:
+                    ui.notify("Couldn't undo — a file with that name already exists. Your deleted note "
+                              "is safe in the workspace's .trash folder.", type="warning", multi_line=True)
+
             with ui.card().classes("w-full p-3").style("background:#FCEBEE;border:1px solid #E7799B;border-radius:14px"):
                 with ui.row().classes("items-center gap-2 w-full no-wrap"):
                     ui.icon("delete_outline").style("color:#C0354B")
                     ui.label(f"Deleted “{undo.get('title', 'note')}”").classes("text-bold")
                     ui.space()
-                    ui.button("Undo", icon="undo",
-                              on_click=lambda t=undo["trash"]: (restore_note(t), ui.navigate.to("/"))).props("flat no-caps color=primary")
+                    ui.button("Undo", icon="undo", on_click=_do_undo).props("flat no-caps color=primary")
 
         # ---- welcome hero ----
         with ui.element("section").classes("dn-hero"):

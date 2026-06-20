@@ -105,9 +105,9 @@ def run_editor(note_path: Path | str, host: str = "127.0.0.1", port: int = 8080,
             rebuild()
 
         def save() -> None:
-            note_path.write_text(
-                state["note"].model_dump_json(indent=2, exclude_none=True), encoding="utf-8"
-            )
+            from .io_utils import atomic_write_text
+
+            atomic_write_text(note_path, state["note"].model_dump_json(indent=2, exclude_none=True))
             ui.notify(f"Saved {note_path.name}", type="positive")
 
         def on_reorder(e) -> None:

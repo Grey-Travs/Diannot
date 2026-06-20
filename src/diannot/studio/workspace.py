@@ -55,8 +55,8 @@ def list_notes(workspace: Path | str) -> list[tuple[str, Note]]:
     """Return (absolute_path, Note) for every note under ``workspace``."""
     notes: list[tuple[str, Note]] = []
     for path in sorted(Path(workspace).glob("**/*.note.json")):
-        if ".trash" in path.parts:
-            continue  # soft-deleted notes live here — keep them out of the Library
+        if ".trash" in path.parts or path.name.endswith(".glossary.note.json"):
+            continue  # skip soft-deleted notes + generated glossary sidecars (reached via Study)
         try:
             notes.append((str(path), Note.model_validate_json(path.read_text(encoding="utf-8"))))
         except Exception:
@@ -106,12 +106,13 @@ def restore_note(trash_dir: str | Path) -> bool:
         return False
     origin = trash / "_origin.txt"
     dest = Path(origin.read_text(encoding="utf-8").strip()) if origin.exists() else trash.parent.parent
+    items = [it for it in trash.iterdir() if it.name != "_origin.txt"]
+    # All-or-nothing: if anything would clobber an existing file, restore NOTHING and KEEP the
+    # trash bundle intact, so the soft-deleted note is never silently destroyed on a name clash.
+    if any((dest / it.name).exists() for it in items):
+        return False
     dest.mkdir(parents=True, exist_ok=True)
-    for item in trash.iterdir():
-        if item.name == "_origin.txt":
-            continue
-        target = dest / item.name
-        if not target.exists():  # don't clobber a same-named note created since
-            shutil.move(str(item), str(target))
+    for item in items:
+        shutil.move(str(item), str(dest / item.name))
     shutil.rmtree(trash, ignore_errors=True)
     return True

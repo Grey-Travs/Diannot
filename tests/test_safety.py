@@ -1,4 +1,5 @@
 """Crash-safe atomic writes + soft-delete/restore (data-safety bundle)."""
+import json
 from pathlib import Path
 
 from diannot.io_utils import atomic_write_text
@@ -13,7 +14,7 @@ def test_atomic_write_replaces_and_leaves_no_temp(tmp_path):
     assert f.read_text(encoding="utf-8") == '{"a": 1}'
     atomic_write_text(f, '{"a": 2}')
     assert f.read_text(encoding="utf-8") == '{"a": 2}'
-    assert not (tmp_path / "n.json.tmp").exists()  # temp consumed by os.replace
+    assert not list(tmp_path.glob("*.tmp"))  # no temp litter left behind
 
 
 def test_atomic_write_creates_parent_dirs(tmp_path):
@@ -51,3 +52,20 @@ def test_list_notes_skips_trash(tmp_path):
 
 def test_soft_delete_missing_returns_none(tmp_path):
     assert delete_note(str(tmp_path / "nope.note.json")) is None
+
+
+def test_restore_refuses_and_preserves_trash_on_name_collision(tmp_path):
+    note = tmp_path / "x.note.json"
+    note.write_text(_NOTE, encoding="utf-8")
+    trash = delete_note(str(note))
+    note.write_text('{"title":"NEW","blocks":[{"type":"banner","text":"NEW"}]}', encoding="utf-8")  # same name reused
+    assert restore_note(trash) is False  # refuses rather than clobber
+    assert Path(trash).exists()  # the trashed copy is preserved, not destroyed
+    assert json.loads(note.read_text(encoding="utf-8"))["title"] == "NEW"  # existing note untouched
+
+
+def test_list_notes_skips_glossary_sidecar(tmp_path):
+    (tmp_path / "x.note.json").write_text(_NOTE, encoding="utf-8")
+    (tmp_path / "x.glossary.note.json").write_text(_NOTE, encoding="utf-8")
+    listed = [Path(p).name for p, _ in list_notes(tmp_path)]
+    assert listed == ["x.note.json"]  # glossary sidecar is not a Library card

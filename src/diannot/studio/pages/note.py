@@ -300,7 +300,9 @@ def note_page(path: str = "") -> None:
             def _do_del() -> None:
                 trash = delete_note(str(note_path))
                 if trash:
-                    app.storage.general["_undo_delete"] = {"trash": trash, "title": note.title}
+                    undos = app.storage.general.get("_undo_deletes") or []
+                    undos.append({"trash": trash, "title": note.title})
+                    app.storage.general["_undo_deletes"] = undos[-10:]
                 ui.navigate.to("/")
 
             with ui.row().classes("justify-end gap-2 w-full"):
@@ -352,10 +354,10 @@ def note_page(path: str = "") -> None:
                      "(e.key==='s'||e.key==='S')){e.preventDefault();}});</script>")
 
     def _on_key(e) -> None:
-        if e.action.keydown and (e.modifiers.ctrl or e.modifiers.meta) and e.key == "s":
+        if e.action.keydown and (e.modifiers.ctrl or e.modifiers.meta) and e.key in ("s", "S"):
             save()
 
-    ui.keyboard(on_key=_on_key)
+    ui.keyboard(on_key=_on_key, ignore=[])  # fire even while a textarea/input is focused
 
     # Save any unsaved edits + free the live note when the tab/window closes (best-effort).
     def _on_disconnect() -> None:
