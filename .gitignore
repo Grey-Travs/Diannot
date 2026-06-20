@@ -33,5 +33,10 @@ Thumbs.db
 # Scratch
 _pdfpeek/
 
+# Release-only secret: the bundled Gemini key + default-engine config (never committed)
+src/diannot/studio/_embedded.py
+# Built installer output
+dist/installer/
+
 # Personal source notes (large binaries kept out of history; store under a notebook later)
 /*.pdf

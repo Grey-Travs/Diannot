@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import re
 
 from claude_agent_sdk import (
@@ -224,6 +225,9 @@ def _gen_text(prompt: str, model: str, settings: Settings, provider: str, system
     if provider == "ollama":
         cfg = settings.providers
         return _providers.ollama_complete(system, prompt, cfg.ollama_model, cfg.ollama_host), []
+    if provider == "gemini":
+        cfg = settings.providers
+        return _providers.gemini_complete(system, prompt, cfg.gemini_model, os.environ.get("GEMINI_API_KEY", "")), []
     return asyncio.run(_run_text(prompt, model, system=system))
 
 
@@ -231,12 +235,17 @@ def _gen_vision(
     content: list[dict], prompt_text: str, images: list[bytes], model: str, settings: Settings, provider: str
 ) -> tuple[str, list[str]]:
     """Run a vision completion through the chosen backend. Returns (text, stderr lines)."""
-    if provider == "ollama":
+    if provider in ("ollama", "gemini"):
         cfg = settings.providers
         b64 = [base64.b64encode(img).decode("ascii") for img in images]
-        text = _providers.ollama_complete(
-            SYSTEM_PROMPT, prompt_text, cfg.ollama_vision_model, cfg.ollama_host, images=b64
-        )
+        if provider == "ollama":
+            text = _providers.ollama_complete(
+                SYSTEM_PROMPT, prompt_text, cfg.ollama_vision_model, cfg.ollama_host, images=b64
+            )
+        else:
+            text = _providers.gemini_complete(
+                SYSTEM_PROMPT, prompt_text, cfg.gemini_model, os.environ.get("GEMINI_API_KEY", ""), images=b64
+            )
         return text, []
     return asyncio.run(_run_multimodal(content, model))
 

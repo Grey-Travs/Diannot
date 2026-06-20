@@ -7,6 +7,8 @@ package's bundled assets.
 """
 from __future__ import annotations
 
+import os
+import sys
 import tomllib
 from pathlib import Path
 
@@ -38,11 +40,12 @@ class ProvidersCfg(BaseModel):
     key); ``"ollama"`` uses a local Ollama server — free, offline, no key.
     """
 
-    notes: str = "claude"  # "claude" | "ollama"
-    study: str = "claude"  # "claude" | "ollama"
+    notes: str = "claude"  # "claude" | "ollama" | "gemini"
+    study: str = "claude"  # "claude" | "ollama" | "gemini"
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:3b"  # good quality + ~1.5 min/note on a laptop CPU
     ollama_vision_model: str = "llama3.2-vision"
+    gemini_model: str = "gemini-2.0-flash"  # free-tier Flash; multimodal (also used for vision)
 
 
 class RenderCfg(BaseModel):
@@ -61,13 +64,22 @@ class PathsCfg(BaseModel):
     packs_dir: Path = DEFAULT_PACKS_DIR
 
 
+def _config_path() -> Path:
+    """Where ``diannot.toml`` lives: per-user AppData in the installed (frozen) app — whose
+    program folder is read-only — else the working directory in dev."""
+    if getattr(sys, "frozen", False):
+        base = os.environ.get("APPDATA") or os.path.expanduser("~/.config")
+        return Path(base) / "diannot" / "diannot.toml"
+    return Path("diannot.toml")
+
+
 class Settings(BaseSettings):
     """Top-level Diannot settings."""
 
     model_config = SettingsConfigDict(
         env_prefix="DIANNOT_",
         env_nested_delimiter="__",
-        toml_file="diannot.toml",
+        toml_file=str(_config_path()),
         extra="ignore",
     )
 
@@ -93,9 +105,9 @@ class Settings(BaseSettings):
         )
 
 
-def load_config_file(path: str | Path = "diannot.toml") -> dict:
+def load_config_file(path: str | Path | None = None) -> dict:
     """Read ``diannot.toml`` into a dict (empty if it doesn't exist)."""
-    p = Path(path)
+    p = Path(path or _config_path())
     if not p.exists():
         return {}
     try:
@@ -113,19 +125,22 @@ def _toml_scalar(value: object) -> str:
     return f'"{text}"'
 
 
-def save_config_file(data: dict, path: str | Path = "diannot.toml") -> None:
+def save_config_file(data: dict, path: str | Path | None = None) -> None:
     """Write a {section: {key: scalar}} dict back to ``diannot.toml``."""
+    p = Path(path or _config_path())
+    p.parent.mkdir(parents=True, exist_ok=True)
     lines: list[str] = []
     for section, table in data.items():
         lines.append(f"[{section}]")
         for key, value in table.items():
             lines.append(f"{key} = {_toml_scalar(value)}")
         lines.append("")
-    Path(path).write_text("\n".join(lines), encoding="utf-8")
+    p.write_text("\n".join(lines), encoding="utf-8")
 
 
-def update_config(section: str, values: dict, path: str | Path = "diannot.toml") -> None:
+def update_config(section: str, values: dict, path: str | Path | None = None) -> None:
     """Merge ``values`` into one ``[section]`` of ``diannot.toml``, preserving the rest."""
+    path = path or _config_path()
     data = load_config_file(path)
     data.setdefault(section, {}).update(values)
     save_config_file(data, path)

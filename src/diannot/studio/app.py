@@ -11,7 +11,7 @@ from pathlib import Path
 from nicegui import ui
 
 from . import previews  # noqa: F401  — registers /preview routes
-from .credentials import load_persisted_key
+from .credentials import load_embedded_defaults, load_persisted_gemini_key, load_persisted_key
 from .pages import (  # noqa: F401  — registers @ui.page
     help,
     home,
@@ -34,12 +34,13 @@ def launch_studio(
     """Start Diannot Studio (blocks until closed)."""
     set_initial_workspace(workspace)
     load_persisted_key()
-    ui.run(
-        native=native,
-        host=host,
-        port=port,
-        show=show,
-        reload=False,
-        title="Diannot Studio",
-        favicon="📚",
-    )
+    load_persisted_gemini_key()
+    load_embedded_defaults()  # release build: bundled free Gemini key + Gemini-by-default
+    run_kwargs = dict(host=host, port=port, show=show, reload=False, title="Diannot Studio", favicon="📚")
+    try:
+        ui.run(native=native, **run_kwargs)
+    except Exception:
+        if not native:
+            raise
+        # The native window (WebView2) couldn't open — fall back to the browser.
+        ui.run(native=False, **run_kwargs)

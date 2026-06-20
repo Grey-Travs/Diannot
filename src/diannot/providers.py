@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 
 DEFAULT_HOST = "http://localhost:11434"
+_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
 def ollama_available(host: str = DEFAULT_HOST, timeout: float = 2.0) -> bool:
@@ -91,3 +93,55 @@ def ollama_complete(
             f"then run:  ollama pull {model}"
         ) from exc
     return (data.get("message") or {}).get("content", "") or ""
+
+
+def gemini_complete(
+    system: str,
+    prompt: str,
+    model: str,
+    api_key: str,
+    images: list[str] | None = None,
+    timeout: float = 120.0,
+) -> str:
+    """Run one Google Gemini completion and return the model's raw text (a JSON string).
+
+    Free with a key from https://aistudio.google.com/apikey. ``images`` are base64-encoded
+    PNG/JPEG strings for vision (Gemini Flash is multimodal). The API key travels in the URL,
+    so it is never echoed in error messages. Raises ``RuntimeError`` with a friendly hint.
+    """
+    api_key = (api_key or "").strip()
+    if not api_key:
+        raise RuntimeError("No Gemini key. Add a free one in Settings (aistudio.google.com/apikey).")
+    parts: list[dict] = [{"text": prompt}]
+    for b64 in images or []:
+        parts.append({"inline_data": {"mime_type": "image/png", "data": b64}})
+    payload = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.2},
+    }
+    url = _GEMINI_ENDPOINT.format(model=model) + "?key=" + urllib.parse.quote(api_key)
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:  # key not echoed (no `from exc`)
+        if exc.code in (400, 401, 403):
+            raise RuntimeError("Gemini rejected the request — the API key looks bad or expired. "
+                               "Check it in Settings.") from None
+        if exc.code == 429:
+            raise RuntimeError("Gemini's free limit was hit (it's shared by everyone using the bundled "
+                               "key). Wait a minute, or add your own free key in Settings.") from None
+        raise RuntimeError(f"Gemini error {exc.code}. Try again in a moment.") from None
+    except (urllib.error.URLError, OSError) as exc:
+        if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
+            raise RuntimeError("Gemini timed out — check your internet connection and try again.") from None
+        raise RuntimeError("Couldn't reach Gemini — check your internet connection.") from None
+    try:
+        chunks = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", []) or []
+        return "".join(p.get("text", "") for p in chunks if isinstance(p, dict)).strip()
+    except (IndexError, AttributeError, KeyError):
+        return ""

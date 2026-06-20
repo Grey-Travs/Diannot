@@ -5,12 +5,25 @@ from nicegui import app, ui
 
 from ...config import Settings, update_config
 from ...providers import ollama_available, ollama_models
-from .. import usage
+from .. import credentials, usage
 from ..background import run_blocking
-from ..credentials import connection_status, persist_key, set_api_key, test_connection
+from ..credentials import (
+    connection_status,
+    gemini_connection_status,
+    persist_gemini_key,
+    persist_key,
+    set_api_key,
+    set_gemini_key,
+    test_connection,
+    test_gemini_connection,
+)
 from ..layout import studio_layout
 
-_ENGINES = {"claude": "Claude (your login / key)", "ollama": "Local — Ollama (free, offline)"}
+_ENGINES = {
+    "gemini": "Gemini (free)",
+    "claude": "Claude (your login / key)",
+    "ollama": "Local — Ollama (offline)",
+}
 
 
 @ui.page("/settings")
@@ -32,8 +45,8 @@ def settings_page() -> None:
         # ---- AI engine (free / offline option) ----
         with ui.card().classes("p-4 w-full gap-2"):
             ui.label("AI engine").classes("text-subtitle1 text-bold")
-            ui.label("Make notes for free and offline with a local model (Ollama), or use Claude "
-                     "(your login / key). Study tools can use either.").classes("text-caption text-grey")
+            ui.label("Make notes with free Gemini (online, no setup), a local model (Ollama, offline), "
+                     "or Claude (your login / key). Study tools can use any of these.").classes("text-caption text-grey")
             notes_engine = ui.select(_ENGINES, value=settings.providers.notes,
                                      label="Make-notes engine").classes("w-80")
             study_engine = ui.select(_ENGINES, value=settings.providers.study,
@@ -80,6 +93,35 @@ def settings_page() -> None:
                 ui.notify("Saved. New notes and study will use this engine.", type="positive")
 
             ui.button("Save engine", icon="save", on_click=save_engine).props("color=primary no-caps")
+
+        # ---- Gemini connection (free) ----
+        with ui.card().classes("p-4 w-full gap-2"):
+            ui.label("Gemini connection (free)").classes("text-subtitle1 text-bold")
+            if credentials.EMBEDDED_KEY_ACTIVE:
+                ui.label("Using the bundled free key — shared with everyone who has this app. Add your "
+                         "own free key below for a private limit.").classes("text-caption text-grey")
+            gstatus = ui.label(gemini_connection_status()).classes("text-grey")
+            gkey = ui.input(label="Gemini API key", password=True, placeholder="AIza…").classes("w-full")
+            gsave_dev = ui.switch("Save this key on this computer")
+
+            def use_gkey() -> None:
+                set_gemini_key(gkey.value)
+                if gsave_dev.value and (gkey.value or "").strip():
+                    persist_gemini_key(gkey.value)
+                gstatus.text = gemini_connection_status()
+                ui.notify("Gemini key set.", type="positive")
+
+            async def gtest() -> None:
+                ui.notify("Testing Gemini…")
+                ok, msg = await run_blocking(test_gemini_connection, settings)
+                gstatus.text = "Connected ✓" if ok else gemini_connection_status()
+                ui.notify(msg, type="positive" if ok else "negative", multi_line=True)
+
+            with ui.row().classes("gap-2"):
+                ui.button("Use key", icon="vpn_key", on_click=use_gkey).props("no-caps")
+                ui.button("Test connection", icon="wifi_tethering", on_click=gtest).props("flat no-caps")
+            ui.label("Get a free key in ~1 minute at aistudio.google.com/apikey (no card needed). The free "
+                     "tier is rate-limited but fine for light use.").classes("text-caption text-grey")
 
         # ---- Claude connection ----
         with ui.card().classes("p-4 w-full gap-2"):
