@@ -1,14 +1,15 @@
 """Settings — Claude connection + defaults."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from nicegui import app, ui
 
-from ...config import Settings
+from ...config import Settings, update_config
+from ...providers import ollama_available, ollama_models
 from ..background import run_blocking
 from ..credentials import connection_status, persist_key, set_api_key, test_connection
 from ..layout import studio_layout
+
+_ENGINES = {"claude": "Claude (your login / key)", "ollama": "Local — Ollama (free, offline)"}
 
 
 @ui.page("/settings")
@@ -26,6 +27,50 @@ def settings_page() -> None:
             ui.label("Appearance").classes("text-subtitle1 text-bold")
             ui.switch("Dark mode").bind_value(app.storage.general, "dark")
             ui.label("Violet theme. Toggle a dark or light look — it's remembered.").classes("text-caption text-grey")
+
+        # ---- AI engine (free / offline option) ----
+        with ui.card().classes("p-4 w-full gap-2"):
+            ui.label("AI engine").classes("text-subtitle1 text-bold")
+            ui.label("Make notes for free and offline with a local model (Ollama), or use Claude "
+                     "(your login / key). Study tools can use either.").classes("text-caption text-grey")
+            notes_engine = ui.select(_ENGINES, value=settings.providers.notes,
+                                     label="Make-notes engine").classes("w-80")
+            study_engine = ui.select(_ENGINES, value=settings.providers.study,
+                                     label="Study (quiz / flashcards) engine").classes("w-80")
+
+            with ui.expansion("Local model (Ollama) setup", icon="dns").classes("w-full"):
+                ui.label("Install Ollama from ollama.com and start it, then pull a model — e.g. run:  "
+                         "ollama pull qwen2.5  (qwen2.5 is a good default; qwen2.5:3b or llama3.2:3b "
+                         "are lighter). No key, fully offline.").classes("text-caption text-grey")
+                host = ui.input(label="Ollama address", value=settings.providers.ollama_host).classes("w-80")
+                omodel = ui.select([settings.providers.ollama_model], value=settings.providers.ollama_model,
+                                   label="Local model", with_input=True,
+                                   new_value_mode="add-unique").classes("w-80")
+                ostatus = ui.label("Click “Check Ollama” to detect a local server.").classes("text-caption text-grey")
+
+                def check_ollama() -> None:
+                    if ollama_available(host.value):
+                        ms = ollama_models(host.value)
+                        if ms:
+                            omodel.set_options(sorted(set(ms + [omodel.value])), value=omodel.value)
+                        ostatus.text = ("✓ Ollama is running. Installed models: "
+                                        + (", ".join(ms) if ms else "none yet — run:  ollama pull qwen2.5"))
+                    else:
+                        ostatus.text = ("⚠ Ollama not detected at this address. Install it from ollama.com, "
+                                        "start it, then click Check again.")
+
+                ui.button("Check Ollama", icon="wifi_tethering", on_click=check_ollama).props("flat no-caps")
+
+            def save_engine() -> None:
+                update_config("providers", {
+                    "notes": notes_engine.value,
+                    "study": study_engine.value,
+                    "ollama_host": host.value,
+                    "ollama_model": omodel.value,
+                })
+                ui.notify("Saved. New notes and study will use this engine.", type="positive")
+
+            ui.button("Save engine", icon="save", on_click=save_engine).props("color=primary no-caps")
 
         # ---- Claude connection ----
         with ui.card().classes("p-4 w-full gap-2"):
@@ -63,20 +108,9 @@ def settings_page() -> None:
                 out = ui.input(label="Export folder (PDF/PNG)", value=str(settings.paths.output_dir)).classes("w-full")
 
             def save_defaults() -> None:
-                content = "\n".join([
-                    "[models]",
-                    f'structure = "{model.value}"',
-                    f'summarize = "{model.value}"',
-                    "",
-                    "[render]",
-                    f'default_pack = "{pack.value}"',
-                    f'default_theme = "{theme.value}"',
-                    "",
-                    "[paths]",
-                    f'output_dir = "{out.value}"',
-                    "",
-                ])
-                Path("diannot.toml").write_text(content, encoding="utf-8")
+                update_config("models", {"structure": model.value, "summarize": model.value})
+                update_config("render", {"default_pack": pack.value, "default_theme": theme.value})
+                update_config("paths", {"output_dir": out.value})
                 ui.notify("Saved to diannot.toml — restart Studio to apply everywhere.", type="positive")
 
             ui.button("Save defaults", icon="save", on_click=save_defaults).props("color=primary no-caps")

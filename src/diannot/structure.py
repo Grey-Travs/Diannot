@@ -28,6 +28,7 @@ from claude_agent_sdk import (
 )
 from pydantic import ValidationError
 
+from . import providers as _providers
 from .config import Settings
 from .models import Note
 
@@ -218,6 +219,28 @@ async def _run_multimodal(
     return text, stderr
 
 
+def _gen_text(prompt: str, model: str, settings: Settings, provider: str, system: str) -> tuple[str, list[str]]:
+    """Run a text completion through the chosen backend. Returns (text, stderr lines)."""
+    if provider == "ollama":
+        cfg = settings.providers
+        return _providers.ollama_complete(system, prompt, cfg.ollama_model, cfg.ollama_host), []
+    return asyncio.run(_run_text(prompt, model, system=system))
+
+
+def _gen_vision(
+    content: list[dict], prompt_text: str, images: list[bytes], model: str, settings: Settings, provider: str
+) -> tuple[str, list[str]]:
+    """Run a vision completion through the chosen backend. Returns (text, stderr lines)."""
+    if provider == "ollama":
+        cfg = settings.providers
+        b64 = [base64.b64encode(img).decode("ascii") for img in images]
+        text = _providers.ollama_complete(
+            SYSTEM_PROMPT, prompt_text, cfg.ollama_vision_model, cfg.ollama_host, images=b64
+        )
+        return text, []
+    return asyncio.run(_run_multimodal(content, model))
+
+
 def complete_json(
     system: str,
     prompt: str,
@@ -239,7 +262,7 @@ def complete_json(
                 f"\n\nYour previous response was invalid ({last_error}). "
                 "Return ONLY a single valid JSON object."
             )
-        text, _ = asyncio.run(_run_text(attempt_prompt, model, system=system))
+        text, _ = _gen_text(attempt_prompt, model, settings, settings.providers.study, system)
         if not text:
             last_error = "empty response"
             continue
@@ -289,7 +312,7 @@ def structure_text(
                 f"\n\nYour previous response was invalid ({last_error}). "
                 "Return ONLY a corrected single JSON object."
             )
-        text, last_stderr = asyncio.run(_run_text(prompt, model))
+        text, last_stderr = _gen_text(prompt, model, settings, settings.providers.notes, SYSTEM_PROMPT)
         note, last_error = _note_from_response(text, title, theme, pack)
         if note is not None:
             return note
@@ -318,9 +341,8 @@ def structure_image(
     model = model or settings.models.structure
     pages_label = ", ".join(str(p) for p in source_pages) if source_pages else None
 
-    base_content: list[dict] = [
-        {"type": "text", "text": _build_vision_prompt(title, len(images), pages_label)}
-    ]
+    base_prompt_text = _build_vision_prompt(title, len(images), pages_label)
+    base_content: list[dict] = [{"type": "text", "text": base_prompt_text}]
     for img in images:
         base_content.append(
             {
@@ -333,20 +355,18 @@ def structure_image(
             }
         )
 
+    provider = settings.providers.notes
     last_error, last_stderr = "unknown error", []
     for attempt in range(max_retries + 1):
-        content = base_content
+        content, prompt_text = base_content, base_prompt_text
         if attempt:
-            content = base_content + [
-                {
-                    "type": "text",
-                    "text": (
-                        f"Your previous response was invalid ({last_error}). "
-                        "Return ONLY a corrected single JSON object."
-                    ),
-                }
-            ]
-        text, last_stderr = asyncio.run(_run_multimodal(content, model))
+            retry = (
+                f"Your previous response was invalid ({last_error}). "
+                "Return ONLY a corrected single JSON object."
+            )
+            content = base_content + [{"type": "text", "text": retry}]
+            prompt_text = f"{base_prompt_text}\n\n{retry}"
+        text, last_stderr = _gen_vision(content, prompt_text, images, model, settings, provider)
         note, last_error = _note_from_response(text, title, theme, pack)
         if note is not None:
             if source_pages and len(source_pages) == 1:

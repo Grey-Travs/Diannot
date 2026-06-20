@@ -7,6 +7,7 @@ package's bundled assets.
 """
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -27,6 +28,21 @@ class ModelsCfg(BaseModel):
 
     structure: str = "claude-opus-4-8"
     summarize: str = "claude-opus-4-8"
+
+
+class ProvidersCfg(BaseModel):
+    """Which AI backend powers each feature.
+
+    ``notes`` drives making notes (structuring imported material); ``study`` drives
+    quiz/flashcard generation. ``"claude"`` uses the Claude Agent SDK (your login or
+    key); ``"ollama"`` uses a local Ollama server — free, offline, no key.
+    """
+
+    notes: str = "claude"  # "claude" | "ollama"
+    study: str = "claude"  # "claude" | "ollama"
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5"
+    ollama_vision_model: str = "llama3.2-vision"
 
 
 class RenderCfg(BaseModel):
@@ -56,6 +72,7 @@ class Settings(BaseSettings):
     )
 
     models: ModelsCfg = ModelsCfg()
+    providers: ProvidersCfg = ProvidersCfg()
     render: RenderCfg = RenderCfg()
     paths: PathsCfg = PathsCfg()
 
@@ -74,3 +91,41 @@ class Settings(BaseSettings):
             TomlConfigSettingsSource(settings_cls),
             file_secret_settings,
         )
+
+
+def load_config_file(path: str | Path = "diannot.toml") -> dict:
+    """Read ``diannot.toml`` into a dict (empty if it doesn't exist)."""
+    p = Path(path)
+    if not p.exists():
+        return {}
+    try:
+        return tomllib.loads(p.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError):
+        return {}
+
+
+def _toml_scalar(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{text}"'
+
+
+def save_config_file(data: dict, path: str | Path = "diannot.toml") -> None:
+    """Write a {section: {key: scalar}} dict back to ``diannot.toml``."""
+    lines: list[str] = []
+    for section, table in data.items():
+        lines.append(f"[{section}]")
+        for key, value in table.items():
+            lines.append(f"{key} = {_toml_scalar(value)}")
+        lines.append("")
+    Path(path).write_text("\n".join(lines), encoding="utf-8")
+
+
+def update_config(section: str, values: dict, path: str | Path = "diannot.toml") -> None:
+    """Merge ``values`` into one ``[section]`` of ``diannot.toml``, preserving the rest."""
+    data = load_config_file(path)
+    data.setdefault(section, {}).update(values)
+    save_config_file(data, path)
