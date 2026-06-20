@@ -143,7 +143,7 @@ def load_embedded_defaults() -> None:
             update_config("providers", {
                 "notes": getattr(_embedded, "DEFAULT_NOTES_PROVIDER", "gemini"),
                 "study": getattr(_embedded, "DEFAULT_STUDY_PROVIDER", "gemini"),
-                "gemini_model": getattr(_embedded, "DEFAULT_GEMINI_MODEL", "gemini-2.0-flash"),
+                "gemini_model": getattr(_embedded, "DEFAULT_GEMINI_MODEL", "gemini-2.5-flash"),
             })
     except Exception:
         pass

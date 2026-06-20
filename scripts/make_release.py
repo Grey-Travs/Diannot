@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 
 _KEY = os.environ.get("DIANNOT_GEMINI_EMBED_KEY", "").strip()
-_MODEL = os.environ.get("DIANNOT_GEMINI_EMBED_MODEL", "gemini-2.0-flash").strip()
+_MODEL = os.environ.get("DIANNOT_GEMINI_EMBED_MODEL", "gemini-2.5-flash").strip()
 
 
 def main() -> None:

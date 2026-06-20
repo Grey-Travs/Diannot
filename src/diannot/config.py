@@ -45,7 +45,7 @@ class ProvidersCfg(BaseModel):
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:3b"  # good quality + ~1.5 min/note on a laptop CPU
     ollama_vision_model: str = "llama3.2-vision"
-    gemini_model: str = "gemini-2.0-flash"  # free-tier Flash; multimodal (also used for vision)
+    gemini_model: str = "gemini-2.5-flash"  # free-tier Flash; multimodal (also used for vision)
 
 
 class RenderCfg(BaseModel):
