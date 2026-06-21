@@ -11,6 +11,8 @@ exactly what the note/quiz/flashcard prompts expect.
 from __future__ import annotations
 
 import json
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -162,3 +164,110 @@ def gemini_complete(
         return "".join(p.get("text", "") for p in chunks if isinstance(p, dict)).strip()
     except (IndexError, AttributeError, KeyError):
         return ""
+
+
+# --- Gemini key pool -------------------------------------------------------------------------
+# Several Gemini keys, each from a DIFFERENT Google account, are separate free-tier quota pools
+# (limits are per project, not per key). This rotates across them and parks any key that just hit
+# its rate limit, so concurrent chunks of a big document spread across accounts instead of
+# hammering one. Keys are supplied locally (user Settings / a build-time bundle); never hardcoded.
+_GEMINI_RATELIMIT_HINT = "limit was hit"  # substring of gemini_complete's 429 message
+_COOLDOWN_SECONDS = 60.0  # a rate-limited key rests ~one limit-window before being tried again
+
+
+class _GeminiPool:
+    """Thread-safe round-robin over the configured Gemini keys, skipping cooling-down keys."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._keys: list[str] = []
+        self._cool: dict[str, float] = {}
+        self._i = 0
+
+    def set_keys(self, keys: list[str]) -> None:
+        seen: set[str] = set()
+        clean: list[str] = []
+        for k in keys:
+            k = (k or "").strip()
+            if k and k not in seen:
+                seen.add(k)
+                clean.append(k)
+        with self._lock:
+            self._keys = clean
+            self._cool = {k: self._cool.get(k, 0.0) for k in clean}  # keep live cooldowns
+            self._i = 0
+
+    def size(self) -> int:
+        with self._lock:
+            return len(self._keys)
+
+    def next_key(self) -> str:
+        """Next usable key (round-robin, preferring keys not cooling down); '' if none configured."""
+        with self._lock:
+            if not self._keys:
+                return ""
+            now = time.monotonic()
+            n = len(self._keys)
+            for off in range(n):
+                k = self._keys[(self._i + off) % n]
+                if self._cool.get(k, 0.0) <= now:
+                    self._i = (self._i + off + 1) % n
+                    return k
+            # Every key is cooling — round-robin anyway so concurrent callers still fan out across
+            # accounts (and gemini_complete_pooled's loop then tries each distinct key once).
+            k = self._keys[self._i]
+            self._i = (self._i + 1) % n
+            return k
+
+    def cool_down(self, key: str, seconds: float = _COOLDOWN_SECONDS) -> None:
+        with self._lock:
+            if key in self._cool:
+                self._cool[key] = time.monotonic() + seconds
+
+
+_GEMINI_POOL = _GeminiPool()
+
+
+def set_gemini_keys(keys: list[str]) -> None:
+    """Configure the rotating Gemini key pool (replaces any previous set)."""
+    _GEMINI_POOL.set_keys(keys)
+
+
+def gemini_pool_size() -> int:
+    """How many keys are in the rotation (0 = single-key / bring-your-own behavior)."""
+    return _GEMINI_POOL.size()
+
+
+def gemini_complete_pooled(
+    system: str,
+    prompt: str,
+    model: str,
+    images: list[str] | None = None,
+    timeout: float = 120.0,
+    fallback_key: str = "",
+) -> str:
+    """Run one Gemini completion, rotating across the key pool and skipping rate-limited keys.
+
+    If the pool is empty, fall back to ``fallback_key`` (single-key / CLI behavior). Tries each
+    configured key at most once per call; raises a (key-free) rate-limit error only after every key
+    has been tried and rate-limited.
+    """
+    if _GEMINI_POOL.size() == 0:
+        return gemini_complete(system, prompt, model, fallback_key, images=images, timeout=timeout)
+    tried: set[str] = set()
+    for _ in range(_GEMINI_POOL.size()):
+        key = _GEMINI_POOL.next_key()
+        if not key or key in tried:
+            break
+        tried.add(key)
+        try:
+            return gemini_complete(system, prompt, model, key, images=images, timeout=timeout)
+        except RuntimeError as exc:
+            if _GEMINI_RATELIMIT_HINT in str(exc).lower():
+                _GEMINI_POOL.cool_down(key)  # this account is rate-limited — try the next one
+                continue
+            raise  # a non-rate-limit error isn't fixed by switching keys
+    raise RuntimeError(
+        "All your Gemini keys are rate-limited right now. Add another key in Settings, use Claude, "
+        "or wait a minute."
+    )

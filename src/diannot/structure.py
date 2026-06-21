@@ -300,7 +300,10 @@ def _gen_text(prompt: str, model: str, settings: Settings, provider: str, system
         return _providers.ollama_complete(system, prompt, cfg.ollama_model, cfg.ollama_host), []
     if provider == "gemini":
         cfg = settings.providers
-        return _providers.gemini_complete(system, prompt, cfg.gemini_model, os.environ.get("GEMINI_API_KEY", "")), []
+        return _providers.gemini_complete_pooled(
+            system, prompt, cfg.gemini_model,
+            fallback_key=os.environ.get("GEMINI_API_KEY", ""),
+        ), []
     try:
         return asyncio.run(_run_text(prompt, model, system=system))
     except Exception as exc:
@@ -321,9 +324,10 @@ def _gen_vision(
                 SYSTEM_PROMPT, prompt_text, cfg.ollama_vision_model, cfg.ollama_host, images=b64
             )
         else:
-            text = _providers.gemini_complete(
-                SYSTEM_PROMPT, prompt_text, cfg.gemini_model, os.environ.get("GEMINI_API_KEY", ""),
+            text = _providers.gemini_complete_pooled(
+                SYSTEM_PROMPT, prompt_text, cfg.gemini_model,
                 images=b64, timeout=300,  # vision generations run longer than the text default
+                fallback_key=os.environ.get("GEMINI_API_KEY", ""),
             )
         return text, []
     try:

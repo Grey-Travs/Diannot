@@ -11,7 +11,12 @@ from pathlib import Path
 from nicegui import ui
 
 from . import previews  # noqa: F401  — registers /preview routes
-from .credentials import load_embedded_defaults, load_persisted_gemini_key, load_persisted_key
+from .credentials import (
+    load_embedded_defaults,
+    load_persisted_gemini_key,
+    load_persisted_key,
+    refresh_gemini_pool,
+)
 from .pages import (  # noqa: F401  — registers @ui.page
     help,
     home,
@@ -36,7 +41,8 @@ def launch_studio(
     set_initial_workspace(workspace)
     load_persisted_key()
     load_persisted_gemini_key()
-    load_embedded_defaults()  # release build: bundled free Gemini key + Gemini-by-default
+    load_embedded_defaults()  # release build: bundled free Gemini key(s) + Gemini-by-default
+    refresh_gemini_pool()  # build the rotating Gemini key pool (saved keys + bundle + env)
     # Prefer the native window, but degrade to the browser if pywebview/WebView2 is unavailable.
     if native:
         try:

@@ -12,28 +12,41 @@ Usage (PowerShell):
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
+# One key (DIANNOT_GEMINI_EMBED_KEY) or a whole rotation pool of keys from different Google accounts
+# (DIANNOT_GEMINI_EMBED_KEYS, comma/space/newline separated). Both are read from the environment so
+# the secrets never touch git or source control; _embedded.py is gitignored.
 _KEY = os.environ.get("DIANNOT_GEMINI_EMBED_KEY", "").strip()
+_KEYS = os.environ.get("DIANNOT_GEMINI_EMBED_KEYS", "").strip()
 _MODEL = os.environ.get("DIANNOT_GEMINI_EMBED_MODEL", "gemini-2.5-flash").strip()
 
 
 def main() -> None:
-    if not _KEY:
+    keys: list[str] = []
+    for k in ([_KEY] + re.split(r"[,\s]+", _KEYS)):
+        k = k.strip()
+        if k and k not in keys:
+            keys.append(k)
+    if not keys:
         raise SystemExit(
-            "Set DIANNOT_GEMINI_EMBED_KEY=<your free Gemini key> first "
-            "(get one at https://aistudio.google.com/apikey)."
+            "Set DIANNOT_GEMINI_EMBED_KEY=<your free Gemini key> (or DIANNOT_GEMINI_EMBED_KEYS="
+            "<key1,key2,...> for a rotation pool) first — get keys at https://aistudio.google.com/apikey."
         )
     dest = Path("src/diannot/studio/_embedded.py")
+    keys_repr = "[" + ", ".join(f'"{k}"' for k in keys) + "]"
     dest.write_text(
-        '"""Build-time secret (gitignored): bundled free Gemini key + default engine."""\n'
-        f'GEMINI_API_KEY = "{_KEY}"\n'
+        '"""Build-time secret (gitignored): bundled free Gemini key(s) + default engine."""\n'
+        f'GEMINI_API_KEY = "{keys[0]}"\n'
+        f'GEMINI_API_KEYS = {keys_repr}\n'
         'DEFAULT_NOTES_PROVIDER = "gemini"\n'
         'DEFAULT_STUDY_PROVIDER = "gemini"\n'
         f'DEFAULT_GEMINI_MODEL = "{_MODEL}"\n',
         encoding="utf-8",
     )
-    print(f"wrote {dest}  (key …{_KEY[-4:]}, model {_MODEL})")
+    tail = ", ".join(f"…{k[-4:]}" for k in keys)
+    print(f"wrote {dest}  ({len(keys)} key(s): {tail}, model {_MODEL})")
 
 
 if __name__ == "__main__":

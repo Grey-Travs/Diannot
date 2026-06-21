@@ -8,10 +8,13 @@ from ...providers import ollama_available, ollama_models
 from .. import credentials, updater, usage
 from ..background import run_blocking
 from ..credentials import (
+    clear_gemini_keys,
     connection_status,
     gemini_connection_status,
-    persist_gemini_key,
+    persist_gemini_keys,
     persist_key,
+    refresh_gemini_pool,
+    saved_gemini_keys,
     set_api_key,
     set_gemini_key,
     test_connection,
@@ -126,16 +129,42 @@ def settings_page() -> None:
                 ui.label("Using the bundled free key — shared with everyone who has this app, so its limit "
                          "is tight. For large files, add your own free key below (your own quota) or use "
                          "Claude.").classes("text-caption text-grey")
-            gstatus = ui.label(gemini_connection_status()).classes("text-grey")
-            gkey = ui.input(label="Gemini API key", password=True, placeholder="AIza…").classes("w-full")
-            gsave_dev = ui.switch("Save this key on this computer")
+            def _key_summary() -> str:
+                saved = saved_gemini_keys()
+                if not saved:
+                    return "No Gemini keys saved on this computer."
+                tails = ", ".join("…" + k[-4:] for k in saved)
+                return f"{len(saved)} key(s) saved here (masked): {tails}"
 
-            def use_gkey() -> None:
-                set_gemini_key(gkey.value)
-                if gsave_dev.value and (gkey.value or "").strip():
-                    persist_gemini_key(gkey.value)
+            gstatus = ui.label(gemini_connection_status()).classes("text-grey")
+            summary_lbl = ui.label(_key_summary()).classes("text-caption text-grey")
+            gkeys = ui.textarea(
+                label="Add / replace Gemini key(s) — one per line",
+                placeholder="Paste key(s) here, one per line, then Save keys.",
+            ).classes("w-full").props("autogrow")
+
+            def _refresh_labels() -> None:
                 gstatus.text = gemini_connection_status()
-                ui.notify("Gemini key set.", type="positive")
+                summary_lbl.text = _key_summary()
+
+            def save_gkeys() -> None:
+                keys = [k for k in (gkeys.value or "").splitlines() if k.strip()]
+                if not keys:
+                    ui.notify("Paste at least one key, or use “Remove all keys”.", type="warning")
+                    return
+                persist_gemini_keys(keys)        # replaces the saved set (retires any legacy key)
+                set_gemini_key(keys[0])          # keep the single-key fallback coherent
+                refresh_gemini_pool()            # rebuild the rotation
+                gkeys.value = ""                 # don't leave keys rendered in the box
+                _refresh_labels()
+                ui.notify(f"Saved {len(keys)} Gemini key(s) — the app rotates through them.", type="positive")
+
+            def remove_gkeys() -> None:
+                clear_gemini_keys()              # delete saved keys + drop the env key
+                refresh_gemini_pool()
+                gkeys.value = ""
+                _refresh_labels()
+                ui.notify("Removed all saved Gemini keys.", type="positive")
 
             async def gtest() -> None:
                 ui.notify("Testing Gemini…")
@@ -144,10 +173,14 @@ def settings_page() -> None:
                 ui.notify(msg, type="positive" if ok else "negative", multi_line=True)
 
             with ui.row().classes("gap-2"):
-                ui.button("Use key", icon="vpn_key", on_click=use_gkey).props("no-caps")
+                ui.button("Save keys", icon="vpn_key", on_click=save_gkeys).props("no-caps")
                 ui.button("Test connection", icon="wifi_tethering", on_click=gtest).props("flat no-caps")
-            ui.label("Get a free key in ~1 minute at aistudio.google.com/apikey (no card needed). The free "
-                     "tier is rate-limited but fine for light use.").classes("text-caption text-grey")
+                ui.button("Remove all keys", icon="delete", on_click=remove_gkeys) \
+                    .props("flat no-caps color=negative")
+            ui.label("Get a free key in ~1 min at aistudio.google.com/apikey (no card needed). Add several "
+                     "keys from DIFFERENT Google accounts (e.g. friends', with their OK) — each has its own "
+                     "free quota, so the app rotates across them and big files finish without hitting one "
+                     "key's limit. Keys are stored only on this computer and shown masked.").classes("text-caption text-grey")
 
         # ---- Claude connection ----
         with ui.card().classes("p-4 w-full gap-2"):
