@@ -113,17 +113,23 @@ RULES:
    definitions, list items, table cells and callouts — wherever a formula appears. For a literal
    PERCENT SIGN inside math write \\% (e.g. percent error $\\%e = \\sqrt{(\\%e_1)^2+(\\%e_2)^2}$);
    a bare % is a LaTeX comment and silently hides the rest of the line.
-8. LAYOUT — TWO-COLUMN TOPIC CARDS: organize a multi-topic note as cards in two columns. Put each
-   major concept AND its sub-points into ONE "list" block (a card): the FIRST item is the concept
-   name (in **bold**) plus a short one-line definition; its "children" are the concise sub-points
-   (each may **bold** its key term and include $math$). Emit one such list block per major concept.
-   Then split the cards across the two columns via each card's "layout": put a coherent group of
-   related concepts in "col1" (left) and the rest in "col2" (right) — e.g. Accuracy + Precision in
-   col1, the error types in col2 — keeping related concepts in the same column and the two columns
-   roughly balanced. Use "full" only for the banner, a wide table, or a concept that truly needs the
-   full width; use "auto" (= full width) for a note with a single topic. Default every multi-topic
-   note to this two-column card layout. Image blocks may also set "width" (10–100, percent of the
-   column). Do NOT set theme or pack — the app controls those.
+8. LAYOUT — FOLD THE PAGE INTO TWO COLUMNS OF WHOLE TOPICS. Organize the note as a SMALL number of
+   topic-cards (usually 2–4), laid out like folding the page in half: each whole topic in ONE column,
+   the LEFT column one topic and the RIGHT column another.
+   a. Make ONE "list" block per topic — that topic's CARD. Put ALL of the topic's concepts as the
+      list's ITEMS, e.g. an item "**Mean** ($\\bar{x}$) — the arithmetic average … Formula: $…$";
+      use a concept's "children" for its own sub-points. Do NOT emit a separate term_definition or body
+      block per concept in this layout — the concepts are ITEMS inside the topic's ONE card. (Within
+      this two-column layout this overrides rule 3.)
+   b. If the topic has a section name, emit it as a "script_heading" placed directly before that topic's
+      card.
+   c. KEEP EACH WHOLE TOPIC IN ONE COLUMN: set the topic's "script_heading" AND its card to the SAME
+      "layout" — "col1" (left) for one topic, "col2" (right) for the next (balance more topics across the
+      two columns). NEVER put a topic's heading in one column and its card in the other, and NEVER leave
+      a topic's heading or card "full"/"auto" in this two-column layout.
+   Use "full" only for the banner or a genuinely wide table; use "auto" only for a single-topic note.
+   Default every multi-topic note to this folded two-column layout. Image blocks may also set "width"
+   (10–100, percent of the column). Do NOT set theme or pack — the app controls those.
 9. If you are given page IMAGES: transcribe ALL visible text faithfully and in logical
    reading order (reconstruct across columns), INCLUDING any formulas, equations, statistical
    notation or chemical reactions — transcribe those as LaTeX per rule 7. For photographs,

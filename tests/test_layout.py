@@ -3,6 +3,20 @@ from diannot.models import BannerBlock, BodyBlock, ListBlock, ListItem, Note, Ta
 from diannot.render import _layout_groups, render_note_html
 
 
+def test_in_column_heading_is_unboxed_title_above_its_card():
+    from diannot.models import ScriptHeadingBlock
+    n = Note(title="T", blocks=[
+        ScriptHeadingBlock(text="Central Tendency", layout="col1"),
+        ListBlock(items=[ListItem(text="**Mean** — avg")], layout="col1"),
+        ScriptHeadingBlock(text="Spread", layout="col2"),
+        ListBlock(items=[ListItem(text="**Range** — diff")], layout="col2"),
+    ])
+    h = render_note_html(n)
+    assert h.count('<div class="cols">') == 1           # one folded two-column section
+    assert ":not(.script-h):not(.subhead)" in h         # the card box excludes section headings
+    assert h.count('class="script-h') == 2              # both topic titles render (as cursive titles)
+
+
 def test_column_blocks_render_as_themed_topic_cards():
     n = Note(title="T", blocks=[
         ListBlock(items=[ListItem(text="**Accuracy** — close to true")], layout="col1"),

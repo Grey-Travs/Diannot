@@ -50,11 +50,15 @@ body {
 .lay-full, .full { grid-column: 1 / -1; }
 .cols { display: flex; gap: 22px; align-items: flex-start; }
 .cols > .col { flex: 1 1 0; min-width: 0; }
-/* Each top-level block in a column is a navy/gold "topic card" box. */
-.cols > .col > * { background: var(--navy-2); border: 1px solid rgba(233, 185, 73, .4);
-  border-left: 4px solid var(--gold); border-radius: 10px; padding: 9px 12px; margin: 0 0 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .25); break-inside: avoid; }
+/* Each CONTENT block in a column is a navy/gold "topic card" box; a section heading stays an
+   unboxed gold title above its card(s). */
+.cols > .col > *:not(.script-h):not(.subhead) { background: var(--navy-2);
+  border: 1px solid rgba(233, 185, 73, .4); border-left: 4px solid var(--gold); border-radius: 10px;
+  padding: 9px 12px; margin: 0 0 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); break-inside: avoid; }
 .cols > .col > *:last-child { margin-bottom: 0; }
+/* The topic title above a column's card(s), sized for the half-width column. */
+.cols > .col > .script-h { font-size: 24px; margin: 2px 0 6px; }
+.cols > .col > .subhead { margin: 4px 0 4px; }
 /* A card's first list item reads as its heading (gold, no bullet, flush left). */
 .cols > .col > .list-wrap { margin: 0; }
 .cols > .col > .list-wrap > ul.list > li:first-child,
