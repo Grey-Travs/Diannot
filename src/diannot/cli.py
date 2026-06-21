@@ -2,7 +2,7 @@
 
 Phase 1 commands:
 - ``create``  — scaffold a new note JSON to edit by hand.
-- ``ingest``  — extract text (txt/md/simple PDF) and structure it with Claude.
+- ``ingest``  — extract text (txt/md/simple PDF) and structure it with the configured AI.
 - ``render``  — render a note JSON to themed HTML (+ optional PDF/PNG).
 """
 from __future__ import annotations
@@ -96,9 +96,9 @@ def ingest(
     pack: str = typer.Option("study_notes", "--pack", help="Style pack."),
     model: Optional[str] = typer.Option(None, "--model", help="Override the structuring model."),
     vision: Optional[bool] = typer.Option(
-        None, "--vision/--no-vision", help="Force Claude vision on/off (default: auto-detect scanned PDFs)."
+        None, "--vision/--no-vision", help="Force AI vision on/off (default: auto-detect scanned PDFs)."
     ),
-    tesseract: bool = typer.Option(False, "--tesseract", help="Use offline Tesseract OCR instead of Claude vision."),
+    tesseract: bool = typer.Option(False, "--tesseract", help="Use offline Tesseract OCR instead of AI vision."),
     dpi: int = typer.Option(200, "--dpi", help="Rasterization DPI for image / scanned-PDF input."),
     out: Optional[Path] = typer.Option(None, "--out", "-o", help="Output note JSON path."),
     render: bool = typer.Option(False, "--render", help="Also render the note to HTML."),
@@ -107,8 +107,8 @@ def ingest(
 ) -> None:
     """Ingest INPUT (text / PDF / image) and structure it into a validated note.
 
-    Text and text-PDFs are read directly; images and scanned PDFs are read with Claude
-    vision (or offline Tesseract via --tesseract).
+    Text and text-PDFs are read directly; images and scanned PDFs are read with the
+    configured AI's vision (or offline Tesseract via --tesseract).
     """
     from .pipeline import decide_mode, ingest_file
 
@@ -143,7 +143,7 @@ def batch(
     theme: Optional[str] = typer.Option(None, "--theme", "-t", help="Color theme (default: config)."),
     pack: str = typer.Option("study_notes", "--pack", help="Style pack."),
     model: Optional[str] = typer.Option(None, "--model", help="Override the structuring model."),
-    vision: Optional[bool] = typer.Option(None, "--vision/--no-vision", help="Force Claude vision on/off."),
+    vision: Optional[bool] = typer.Option(None, "--vision/--no-vision", help="Force AI vision on/off."),
     tesseract: bool = typer.Option(False, "--tesseract", help="Use offline Tesseract OCR."),
     dpi: int = typer.Option(200, "--dpi", help="Rasterization DPI for image / scanned-PDF input."),
     glob: str = typer.Option("**/*", "--glob", help="Which files to include (recursive by default)."),
@@ -321,10 +321,12 @@ def search(
     if not results:
         typer.echo("No matches.")
         return
+    from .search import SNIP_CLOSE, SNIP_OPEN
     for r in results:
         loc = f" (p.{r['source_page']})" if r["source_page"] else ""
         typer.echo(f"{typer.style(r['note_title'], bold=True)} · {r['block_type']}{loc}")
-        typer.echo(f"   {r['snippet']}")
+        snippet = r["snippet"].replace(SNIP_OPEN, "[").replace(SNIP_CLOSE, "]")
+        typer.echo(f"   {snippet}")
 
 
 @app.command()
@@ -365,12 +367,13 @@ def quiz(
     html: bool = typer.Option(True, "--html/--no-html", help="Write an interactive HTML quiz."),
     model: Optional[str] = typer.Option(None, "--model", help="Override the model."),
 ) -> None:
-    """Generate a multiple-choice quiz from a note (uses Claude)."""
+    """Generate a multiple-choice quiz from a note (uses the configured AI provider)."""
     from .quiz import generate_quiz, render_quiz_html
 
     settings = Settings()
     note = Note.model_validate_json(note_path.read_text(encoding="utf-8"))
-    typer.echo(f"Generating a {count}-question quiz with Claude ({model or settings.models.structure})…")
+    typer.echo(f"Generating a {count}-question quiz with {settings.providers.study} "
+               f"({model or settings.models.structure})…")
     try:
         q = generate_quiz(note, model=model, settings=settings, count=count)
     except Exception as exc:

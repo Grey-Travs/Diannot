@@ -122,7 +122,7 @@ def _ej_items_to_listitems(ej_items) -> list:
 def _ej_to_block(ej: dict):
     data = ej.get("data") or {}
     dn = (ej.get("tunes") or {}).get("dn") or {}
-    meta = dict(dn.get("meta") or data.get("_meta") or {})
+    meta = dict(dn.get("meta") or {})
     layout = dn.get("layout") or meta.get("layout")
     t = ej.get("type")
 
@@ -211,10 +211,7 @@ def editor_to_blocks(payload: dict) -> list:
             out.append(_ej_to_block(ej))
         except Exception:
             # Recover the preserved original from where it's actually stored (the dn tune).
-            meta = None
-            if isinstance(ej, dict):
-                meta = ((ej.get("tunes") or {}).get("dn") or {}).get("meta") \
-                    or (ej.get("data") or {}).get("_meta")
+            meta = ((ej.get("tunes") or {}).get("dn") or {}).get("meta") if isinstance(ej, dict) else None
             if meta:
                 try:
                     out.append(_validate(dict(meta)))

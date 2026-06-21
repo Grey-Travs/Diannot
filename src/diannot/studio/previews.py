@@ -73,10 +73,37 @@ def preview_live(token: str = Query(...), v: int = 0) -> str:
     return render_note_html(note, settings=Settings())
 
 
+def _allowed_file_roots() -> set[Path]:
+    """Directories /file may serve from: the workspace, open notes' .assets, the sample, output."""
+    roots: set[Path] = set()
+    for d in LIVE_ASSETS.values():
+        try:
+            roots.add(Path(d).resolve())
+        except Exception:
+            pass
+    try:
+        from .workspace import SAMPLE_DIR, current_workspace
+        ws = current_workspace()
+        if ws:
+            roots.add(Path(ws).resolve())
+        roots.add(Path(SAMPLE_DIR).resolve())
+    except Exception:
+        pass
+    try:
+        roots.add(Settings().paths.output_dir.resolve())
+    except Exception:
+        pass
+    return roots
+
+
 @app.get("/file")
 def serve_file(path: str = Query(...)):
-    """Serve a local file (used by the editor preview for uploaded images)."""
+    """Serve a local file (uploaded note images), CONFINED to the workspace/assets roots so it
+    can't be turned into an arbitrary local-file read (e.g. of keys or source)."""
     p = Path(path)
     if not p.is_file():
         return HTMLResponse("not found", status_code=404)
-    return FileResponse(str(p))
+    rp = p.resolve()
+    if not any(rp == root or rp.is_relative_to(root) for root in _allowed_file_roots()):
+        return HTMLResponse("forbidden", status_code=403)
+    return FileResponse(str(rp))

@@ -4,7 +4,7 @@ Upload → plain-language auto-detect → Simple options (+ Advanced expander) �
 build the note as an APP-SCOPED background task (so it survives leaving the page)
 → open the new note.
 
-The build (reading the file + asking Opus to structure it) can take a while, so it
+The build (reading the file + asking the AI to structure it) can take a while, so it
 runs via ``background_tasks.create`` and records progress in a module-level registry
 keyed by workspace. Leaving the wizard and coming back re-attaches to the running (or
 finished) job instead of silently cancelling it.
@@ -49,7 +49,7 @@ def _unique_note_path(workspace: str, title: str) -> Path:
 async def _run_import(workspace: str, job: dict, path: Path, params: dict, settings: Settings) -> None:
     """Read + structure the file and save the note. Runs detached from any client."""
     try:
-        job["step"] = "Reading your file and asking Opus to structure it…"
+        job["step"] = f"Reading your file and structuring it with {settings.providers.notes}…"
         note = await run_blocking(ingest_file, path, settings=settings, **params)
         job["step"] = "Saving your notes…"
         dest = _unique_note_path(workspace, params.get("title") or note.title)

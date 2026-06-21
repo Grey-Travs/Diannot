@@ -447,6 +447,7 @@ def note_page(path: str = "", view: str = "") -> None:
             except Exception:
                 pass
         LIVE.pop(token, None)
+        LIVE_ASSETS.pop(token, None)
 
     try:
         ui.context.client.on_disconnect(_on_disconnect)

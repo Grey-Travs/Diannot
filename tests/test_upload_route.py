@@ -27,3 +27,20 @@ def test_upload_unknown_token_fails_soft():
                     files={"image": ("p.png", b"x", "image/png")})
     assert r.status_code == 200
     assert r.json()["success"] == 0
+
+
+def test_file_route_confined_to_allowed_roots(tmp_path):
+    client, previews = _client()
+    assets = tmp_path / "note.assets"
+    assets.mkdir()
+    img = assets / "x.png"
+    img.write_bytes(b"\x89PNG")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("PRIVATE KEY", encoding="utf-8")
+    previews.LIVE_ASSETS["t"] = assets  # register the assets dir as an allowed root
+
+    ok = client.get("/file", params={"path": str(img)})
+    assert ok.status_code == 200  # an image under a registered .assets dir is served
+
+    blocked = client.get("/file", params={"path": str(secret)})
+    assert blocked.status_code == 403  # an arbitrary file outside the roots is refused

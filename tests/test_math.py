@@ -31,3 +31,16 @@ def test_plain_note_pulls_in_no_math_assets():
     h = render_note_html(n)
     assert "renderMathInElement" not in h
     assert "katex" not in h.lower()
+
+
+def test_currency_dollars_do_not_trigger_katex():
+    # literal currency (two+ '$') must NOT enable KaTeX and mangle the prose
+    n = Note(title="Lab costs", blocks=[BodyBlock(text="The kit costs $5 and each tube is $10.")])
+    h = render_note_html(n)
+    assert "renderMathInElement" not in h
+
+
+def test_real_math_and_chem_trigger_katex():
+    for t in [r"value $\sigma$", r"$x^2$ here", r"sub $H_2O$", r"$$\frac{a}{b}$$", r"$\ce{H2O}$"]:
+        n = Note(title="m", blocks=[BodyBlock(text=t)])
+        assert "renderMathInElement" in render_note_html(n), t

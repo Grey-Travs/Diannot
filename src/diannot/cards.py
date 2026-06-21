@@ -23,6 +23,16 @@ def _plain(text: str) -> str:
     return text.replace("**", "").strip()
 
 
+def _list_item_texts(items) -> list[str]:
+    """Flatten a (possibly nested) list block's item text, including children."""
+    out: list[str] = []
+    for it in items:
+        out.append(it.text)
+        if it.children:
+            out.extend(_list_item_texts(it.children))
+    return out
+
+
 def card_id(front: str) -> str:
     """Stable id for a card, derived from its front text."""
     return hashlib.sha1(front.encode("utf-8")).hexdigest()[:12]
@@ -81,7 +91,7 @@ def note_to_text(note: Note) -> str:
         elif b.type == "term_definition":
             parts.append(f"{b.term}: {b.definition}")
         elif b.type == "list":
-            parts.extend(it.text for it in b.items)
+            parts.extend(_list_item_texts(b.items))
         elif b.type == "callout":
             if b.body:
                 parts.append(b.body)
@@ -175,10 +185,12 @@ def render_deck_html(deck: Deck, theme_name: str = "circulatory", settings: Sett
             f'{f"<div class=meta>{meta}</div>" if meta else ""}</div>'
             f'<div class="face back">{_html.escape(c.back)}</div></div></div>'
         )
+    from .render import math_assets_html
+    math = math_assets_html(" ".join(f"{c.front} {c.back}" for c in deck.cards))
     return (
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         f"<title>{_html.escape(deck.name)} — flashcards</title><style>{css}</style></head>"
         f"<body><h1>{_html.escape(deck.name)}</h1>"
         f'<p class="sub">{len(deck.cards)} cards — click a card to flip.</p>'
-        f'<div class="grid">{"".join(cards_html)}</div></body></html>'
+        f'<div class="grid">{"".join(cards_html)}</div>{math}</body></html>'
     )

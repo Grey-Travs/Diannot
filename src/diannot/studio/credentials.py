@@ -58,11 +58,6 @@ def persist_key(key: str) -> None:
         _write_creds({"anthropic_api_key": key})
 
 
-def clear_persisted_key() -> None:
-    if _cred_file().exists():
-        _cred_file().unlink()
-
-
 def load_persisted_key() -> None:
     """Load a saved Claude key into the environment at startup (unless one is already set)."""
     if os.environ.get("ANTHROPIC_API_KEY"):

@@ -11,8 +11,8 @@ from typing import Annotated, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 # Per-block layout override within the two-column flow.
-# "auto" = flow normally; "full" = span both columns; "col1"/"col2" reserved
-# for column-pinning (a later enhancement — treated as "auto" for now).
+# "auto" = flow normally (full width); "full" = span both columns; "col1"/"col2" pin the block to
+# the left/right column so paired content renders side by side (the editor's Left/Right control).
 Layout = Literal["auto", "full", "col1", "col2"]
 
 
@@ -102,7 +102,7 @@ class ImageBlock(_Block):
 
 
 class DiagramBlock(_Block):
-    """Mermaid diagram source (rendering is a later phase)."""
+    """Mermaid diagram source (rendered client-side when the note is viewed/exported)."""
 
     type: Literal["diagram"] = "diagram"
     mermaid: str

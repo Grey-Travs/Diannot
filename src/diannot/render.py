@@ -20,6 +20,9 @@ from .config import PACKAGE_DIR, Settings
 from .models import Note
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+# Real math/chemistry, so a literal "$5 and $10" (currency) does NOT trigger KaTeX: a $$…$$ block,
+# a $…$ span that contains a LaTeX command / sub-superscript / braces, or a \ce{…}/\pu{…} call.
+_MATH_RE = re.compile(r"\$\$.+?\$\$|\$[^$\n]*(?:\\[a-zA-Z]+|[_^{}])[^$\n]*\$|\\ce\{|\\pu\{")
 _KATEX_DIR = PACKAGE_DIR / "assets" / "vendor" / "katex"
 # Auto-render config: $$…$$ for display, $…$ for inline. mhchem adds \ce{…}/\pu{…}.
 # preProcess auto-escapes a BARE "%" to "\%": in TeX a bare % is a comment that silently eats the
@@ -122,8 +125,10 @@ def _embedded_katex_html() -> str:
         b64 = base64.b64encode(fp.read_bytes()).decode("ascii")
         return f"url(data:font/woff2;base64,{b64})"
 
-    css = re.sub(r"url\((fonts/KaTeX_[A-Za-z0-9_-]+\.woff2)\)", _embed_font,
-                 css_path.read_text(encoding="utf-8"))
+    css = css_path.read_text(encoding="utf-8")
+    css = re.sub(r"url\((fonts/KaTeX_[A-Za-z0-9_-]+\.woff2)\)", _embed_font, css)
+    # Drop the now-dead relative woff/ttf fallbacks (we embed woff2 as data URIs).
+    css = re.sub(r",\s*url\(fonts/KaTeX_[A-Za-z0-9_-]+\.(?:woff|ttf)\)\s*format\(\"(?:woff|truetype)\"\)", "", css)
     parts = [f"<style>{css}</style>", f"<script>{js_path.read_text(encoding='utf-8')}</script>"]
     mhchem = _KATEX_DIR / "mhchem.min.js"
     if mhchem.exists():  # chemistry: \ce{2H2 + O2 -> 2H2O}
@@ -131,6 +136,28 @@ def _embedded_katex_html() -> str:
     parts.append(f"<script>{autorender_path.read_text(encoding='utf-8')}</script>")
     parts.append(f"<script>{_KATEX_RENDER_CALL}</script>")
     return "\n".join(parts)
+
+
+def _strings(obj) -> "list[str]":
+    """All string values inside a model_dump (recursively) — for math detection."""
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        return [s for v in obj.values() for s in _strings(v)]
+    if isinstance(obj, list):
+        return [s for v in obj for s in _strings(v)]
+    return []
+
+
+def has_math(text: str) -> bool:
+    """True if ``text`` contains real LaTeX math/chemistry (not just literal '$' currency)."""
+    return bool(_MATH_RE.search(text or ""))
+
+
+def math_assets_html(text: str) -> str:
+    """The self-contained KaTeX+mhchem block if ``text`` has math, else '' — for study views
+    (flashcards/quiz) that aren't rendered through a pack template."""
+    return _embedded_katex_html() if has_math(text) else ""
 
 
 def _environment(pack_dir: Path) -> Environment:
@@ -166,10 +193,10 @@ def render_note_html(
     pack_css = (pack_dir / "base.css").read_text(encoding="utf-8")
 
     font_css = build_font_css(pack_dir)
-    # Only pull in the Mermaid/KaTeX libraries when the note actually uses them,
-    # so plain notes stay fully self-contained and offline.
+    # Only pull in Mermaid/KaTeX when the note uses them. KaTeX is vendored + embedded (offline);
+    # Mermaid is still loaded from a CDN, so notes with diagrams need connectivity to render them.
     needs_mermaid = any(b.type == "diagram" for b in note.blocks)
-    needs_katex = note.model_dump_json().count("$") >= 2
+    needs_katex = bool(_MATH_RE.search("\n".join(_strings(note.model_dump()))))
 
     env = _environment(pack_dir)
     template = env.get_template("template.html.j2")

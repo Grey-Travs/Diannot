@@ -2,12 +2,24 @@
 from __future__ import annotations
 
 import hashlib
+import html as _html
+import re
 from pathlib import Path
 
 from .cards import Deck
 
 # Fixed model id so re-exported cards keep the same note type in Anki.
 _MODEL_ID = 1644220011
+
+
+def _to_anki_html(text: str) -> str:
+    """Anki fields are HTML: escape specials, then map **bold** and $math$ to forms Anki renders
+    (Anki has built-in MathJax for \\(...\\) / \\[...\\])."""
+    s = _html.escape(text or "")
+    s = re.sub(r"\$\$(.+?)\$\$", r"\\[\1\\]", s)      # display math
+    s = re.sub(r"\$([^$\n]+?)\$", r"\\(\1\\)", s)     # inline math
+    s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)     # bold
+    return s
 
 
 def _stable_id(text: str) -> int:
@@ -42,7 +54,7 @@ def export_apkg(deck: Deck, out_path: Path | str, deck_name: str | None = None) 
         adeck.add_note(
             genanki.Note(
                 model=model,
-                fields=[card.front, card.back],
+                fields=[_to_anki_html(card.front), _to_anki_html(card.back)],
                 tags=tags,
                 guid=genanki.guid_for(card.id),
             )

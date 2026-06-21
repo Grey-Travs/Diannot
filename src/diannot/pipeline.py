@@ -1,7 +1,7 @@
 """High-level ingestion pipeline: a single source file -> a validated :class:`Note`.
 
 Shared by the ``ingest`` (one file) and ``batch`` (a folder) CLI commands. Decides
-how to read each source — direct text, Claude vision, or offline Tesseract OCR —
+how to read each source — direct text, AI vision, or offline Tesseract OCR —
 then hands the result to the structurer.
 """
 from __future__ import annotations

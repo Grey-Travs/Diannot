@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from nicegui import ui
 
-from ...search import DEFAULT_DB, build_index
+from ...search import DEFAULT_DB, SNIP_CLOSE, SNIP_OPEN, build_index
 from ...search import search as fts_search
 from ..background import run_blocking
 from ..layout import studio_layout
@@ -46,7 +46,8 @@ def search_page() -> None:
                     with ui.card().classes("w-full"):
                         loc = f" · p.{h['source_page']}" if h.get("source_page") else ""
                         ui.label(f"{h['note_title']} · {h['block_type']}{loc}").classes("text-bold")
-                        snippet = _html.escape(h["snippet"]).replace("[", "<mark>").replace("]", "</mark>")
+                        snippet = (_html.escape(h["snippet"])
+                                   .replace(SNIP_OPEN, "<mark>").replace(SNIP_CLOSE, "</mark>"))
                         ui.html(snippet).classes("text-grey")
                         ui.button("Open", icon="edit",
                                   on_click=lambda p=h["note_path"]: ui.navigate.to(f"/note?path={quote(p)}")).props("flat dense no-caps")

@@ -1,7 +1,7 @@
 """Load raw text from supported inputs.
 
-Phase 1 supports plain text (``.txt``/``.md``) and *simple* text PDFs via
-PyMuPDF. OCR, scanned PDFs and Office formats arrive in Phase 2.
+Plain text (``.txt``/``.md``) and *text* PDFs are read here via PyMuPDF. Images and scanned PDFs
+are routed to vision (or Tesseract) by :mod:`diannot.pipeline`; Word/PowerPoint are handled there too.
 """
 from __future__ import annotations
 
@@ -107,7 +107,9 @@ def is_scanned_pdf(path: Path | str, pages: str | None = None, min_chars_per_pag
 
     doc = fitz.open(path)
     try:
-        idxs = list(parse_pages(pages, doc.page_count) if pages else range(doc.page_count))
+        # Sample the first few pages when no range is given — a scanned PDF is scanned throughout,
+        # so this detects it without reading every page (which would stall the import UI on a big PDF).
+        idxs = list(parse_pages(pages, doc.page_count) if pages else range(min(doc.page_count, 5)))
         chars = sum(len(doc[i].get_text().strip()) for i in idxs)
     finally:
         doc.close()

@@ -96,13 +96,19 @@ def render_quiz_html(quiz: Quiz, theme_name: str = "circulatory", settings: Sett
         "opts.forEach((o,j)=>{o.classList.remove('correct','wrong');if(j===ANSWERS[i])o.classList.add('correct');});"
         "if(sel){const v=parseInt(sel.value);if(v===ANSWERS[i])s++;else opts[v].classList.add('wrong');}"
         "const e=document.getElementById('exp'+i);if(EXPL[i]){e.textContent='\\u00bb '+EXPL[i];e.style.display='block';}}"
+        "if(window.renderMathInElement){renderMathInElement(document.body,{delimiters:["
+        "{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});}"
         "document.getElementById('score').textContent='Score: '+s+' / '+ANSWERS.length;}"
     ) % (json.dumps(answers), json.dumps(expl))
 
+    from .render import math_assets_html
+    math = math_assets_html(" ".join(
+        [q.question + " " + " ".join(q.choices) + " " + (q.explanation or "") for q in quiz.questions]
+    ))
     return (
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         f"<title>{_html.escape(quiz.title)} — quiz</title><style>{css}</style></head><body>"
         f"<h1>{_html.escape(quiz.title)} — Quiz</h1>{''.join(blocks)}"
         "<button onclick='check()'>Check answers</button><div id='score' aria-live='polite'></div>"
-        f"<script>{js}</script></body></html>"
+        f"{math}<script>{js}</script></body></html>"
     )

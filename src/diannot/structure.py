@@ -273,7 +273,8 @@ def _gen_vision(
             )
         else:
             text = _providers.gemini_complete(
-                SYSTEM_PROMPT, prompt_text, cfg.gemini_model, os.environ.get("GEMINI_API_KEY", ""), images=b64
+                SYSTEM_PROMPT, prompt_text, cfg.gemini_model, os.environ.get("GEMINI_API_KEY", ""),
+                images=b64, timeout=300,  # vision generations run longer than the text default
             )
         return text, []
     try:
