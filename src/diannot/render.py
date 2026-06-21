@@ -10,15 +10,23 @@ import base64
 import html as _html
 import re
 import tomllib
+from functools import lru_cache
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
-from .config import Settings
+from .config import PACKAGE_DIR, Settings
 from .models import Note
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_KATEX_DIR = PACKAGE_DIR / "assets" / "vendor" / "katex"
+# Auto-render config: $$…$$ for display, $…$ for inline. mhchem adds \ce{…}/\pu{…}.
+_KATEX_RENDER_CALL = (
+    "renderMathInElement(document.body,{delimiters:["
+    "{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],"
+    "throwOnError:false});"
+)
 
 
 def inline_md(text: str) -> Markup:
@@ -79,6 +87,49 @@ def build_font_css(pack_dir: Path) -> str:
     return "\n".join(rules)
 
 
+def _cdn_katex_html() -> str:
+    """Online fallback when the vendored KaTeX assets are missing."""
+    cdn = "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist"
+    return (
+        f'<link rel="stylesheet" href="{cdn}/katex.min.css">\n'
+        f'<script defer src="{cdn}/katex.min.js"></script>\n'
+        f'<script defer src="{cdn}/contrib/mhchem.min.js"></script>\n'
+        f'<script defer src="{cdn}/contrib/auto-render.min.js"></script>\n'
+        f"<script>window.addEventListener('load',function(){{{_KATEX_RENDER_CALL}}});</script>"
+    )
+
+
+@lru_cache(maxsize=1)
+def _embedded_katex_html() -> str:
+    """A fully self-contained KaTeX + mhchem block: CSS with fonts base64-embedded and the JS
+    inlined, so math/chemistry renders offline in the preview AND in exported HTML/PDF.
+
+    Cached: built once, reused across renders. Falls back to the CDN if assets are missing.
+    """
+    css_path = _KATEX_DIR / "katex.min.css"
+    js_path = _KATEX_DIR / "katex.min.js"
+    autorender_path = _KATEX_DIR / "auto-render.min.js"
+    if not (css_path.exists() and js_path.exists() and autorender_path.exists()):
+        return _cdn_katex_html()
+
+    def _embed_font(m: "re.Match[str]") -> str:
+        fp = _KATEX_DIR / m.group(1)
+        if not fp.exists():
+            return m.group(0)
+        b64 = base64.b64encode(fp.read_bytes()).decode("ascii")
+        return f"url(data:font/woff2;base64,{b64})"
+
+    css = re.sub(r"url\((fonts/KaTeX_[A-Za-z0-9_-]+\.woff2)\)", _embed_font,
+                 css_path.read_text(encoding="utf-8"))
+    parts = [f"<style>{css}</style>", f"<script>{js_path.read_text(encoding='utf-8')}</script>"]
+    mhchem = _KATEX_DIR / "mhchem.min.js"
+    if mhchem.exists():  # chemistry: \ce{2H2 + O2 -> 2H2O}
+        parts.append(f"<script>{mhchem.read_text(encoding='utf-8')}</script>")
+    parts.append(f"<script>{autorender_path.read_text(encoding='utf-8')}</script>")
+    parts.append(f"<script>{_KATEX_RENDER_CALL}</script>")
+    return "\n".join(parts)
+
+
 def _environment(pack_dir: Path) -> Environment:
     env = Environment(
         loader=FileSystemLoader(str(pack_dir)),
@@ -126,4 +177,5 @@ def render_note_html(
         font_css=font_css,
         enable_mermaid=needs_mermaid,
         enable_katex=needs_katex,
+        katex_html=Markup(_embedded_katex_html()) if needs_katex else "",
     )

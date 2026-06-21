@@ -93,22 +93,34 @@ RULES:
 5. Convert bulleted/numbered runs into list blocks (preserve nesting).
 6. Bold the testable terms and key phrases (anatomical names, key processes, numeric
    facts) with **double asterisks** in body, definitions, list items and table cells.
-7. LAYOUT (two-column grid): set each block's "layout" — "col1" (left half) and "col2" (right
+7. MATH, STATISTICS & CHEMISTRY: reproduce every mathematical or chemical expression you
+   read as LaTeX, so it renders as real symbols (never as broken text or lookalike letters,
+   and never dropped). Wrap inline math in single dollar signs and standalone equations in
+   double dollar signs. Examples (statistics/math): $\\bar{x}$, $\\sigma^2$, $\\frac{a}{b}$,
+   $\\sum_{i=1}^{n} x_i$, $p < 0.05$, $\\chi^2$, $\\mu \\pm \\sigma$, $\\leq$, $\\rightarrow$,
+   $x^{2}$, $H_2O$ (subscripts with _ , superscripts with ^). Write CHEMICAL formulas and
+   equations with the mhchem command \\ce{...}: $\\ce{H2SO4}$, $\\ce{CO2}$,
+   $\\ce{2H2 + O2 -> 2H2O}$, $\\ce{CaCO3 ->[\\Delta] CaO + CO2}$. Use this inside body,
+   definitions, list items, table cells and callouts — wherever a formula appears.
+8. LAYOUT (two-column grid): set each block's "layout" — "col1" (left half) and "col2" (right
    half) for side-by-side content (emit a "col1" block immediately followed by its paired "col2"
    block to fill one row); "full" for wide content (banner, tables, large callouts); "auto"
    (= full width) otherwise. Image blocks may also set "width" (10–100, percent of the column).
    Do NOT set theme or pack — the app controls those.
-8. If you are given page IMAGES: transcribe ALL visible text faithfully and in logical
-   reading order (reconstruct across columns). For photographs, diagrams or micrographs
-   you cannot transcribe, capture them briefly as a body note or an image caption that
-   describes them — never invent labels, numbers, or text you cannot clearly read.
-9. CONFIDENCE: any block may include "confidence": "low" or "medium" when its text is
-   uncertain (illegible/blurry source, ambiguous wording, a number you are unsure of, or
-   content you had to reconstruct). Omit "confidence" for clearly-read content. Never
-   guess silently — flag it instead.
-10. SOURCE PAGE: when page numbers are provided to you, set each block's "source_page"
+9. If you are given page IMAGES: transcribe ALL visible text faithfully and in logical
+   reading order (reconstruct across columns), INCLUDING any formulas, equations, statistical
+   notation or chemical reactions — transcribe those as LaTeX per rule 7. For photographs,
+   diagrams or micrographs you cannot transcribe, capture them briefly as a body note or an
+   image caption that describes them — never invent labels, numbers, or text you cannot clearly read.
+10. CONFIDENCE: any block may include "confidence": "low" or "medium" when its text is
+    uncertain (illegible/blurry source, ambiguous wording, a number you are unsure of, or
+    content you had to reconstruct). Omit "confidence" for clearly-read content. Never
+    guess silently — flag it instead.
+11. SOURCE PAGE: when page numbers are provided to you, set each block's "source_page"
     to the page number it came from.
-11. Output valid JSON only. Escape characters properly. No trailing commas.
+12. Output valid JSON only. Escape characters properly: a backslash in LaTeX must be doubled
+    in JSON, so e.g. the body text $\\sigma^2$ is written "$\\\\sigma^2$" in the JSON string.
+    No trailing commas.
 """
 
 
