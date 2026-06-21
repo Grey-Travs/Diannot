@@ -56,7 +56,14 @@ _INIT_TEMPLATE = r"""
       return opts.map(function(o){
         return { icon:'<b style="font-size:13px">'+o[2]+'</b>', title:o[1], toggle:'dn-col',
                  isActive:self.layout===o[0], closeOnActivate:true,
-                 onActivate:function(){ self.layout=o[0]; } };
+                 onActivate:function(){
+                   self.layout=o[0];
+                   // Editor.js doesn't fire onChange for a tune toggle, so persist it ourselves.
+                   if(window._dnEditor){ clearTimeout(window._dnDebounce);
+                     window._dnDebounce=setTimeout(function(){
+                       window._dnEditor.save().then(function(d){ emitEvent('doc_changed', d); });
+                     }, 200); }
+                 } };
       });
     }
     save(){ return { layout:this.layout, meta:this.meta }; }
