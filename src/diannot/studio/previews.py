@@ -51,10 +51,18 @@ async def upload_live_image(token: str = Query(...), image: UploadFile = File(..
     assets_dir = LIVE_ASSETS.get(token)
     if assets_dir is None:
         return JSONResponse({"success": 0, "message": "no live note"})
-    assets_dir.mkdir(parents=True, exist_ok=True)
-    dest = assets_dir / Path(image.filename or "image").name
-    dest.write_bytes(await image.read())
-    return JSONResponse({"success": 1, "file": {"url": f"/file?path={quote(str(dest.resolve()))}"}})
+    name = Path(image.filename or "image").name
+    if name in ("", ".", ".."):  # never let a crafted filename escape the assets dir
+        name = "image"
+    try:
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        dest = (assets_dir / name).resolve()
+        if not dest.is_relative_to(assets_dir.resolve()):
+            return JSONResponse({"success": 0, "message": "bad filename"})
+        dest.write_bytes(await image.read())
+    except Exception as exc:
+        return JSONResponse({"success": 0, "message": str(exc)})
+    return JSONResponse({"success": 1, "file": {"url": f"/file?path={quote(str(dest))}"}})
 
 
 @app.get("/preview/live", response_class=HTMLResponse)

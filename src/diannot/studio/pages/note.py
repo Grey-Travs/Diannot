@@ -9,6 +9,7 @@ be open at once and the preview (``/preview/live?token=``) reflects UNSAVED edit
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from pathlib import Path
@@ -74,7 +75,7 @@ def _snippet(b) -> str:
 
 
 @ui.page("/note")
-def note_page(path: str = "") -> None:
+def note_page(path: str = "", view: str = "") -> None:
     studio_layout("")
     if not path:
         ui.label("No note selected — go Home to pick one.").classes("p-4 text-grey")
@@ -95,7 +96,9 @@ def note_page(path: str = "") -> None:
     bodies: list = []  # the (hidden) edit forms, for collapse/expand all
     themes = sorted(p.stem for p in settings.paths.themes_dir.glob("*.toml"))
     packs = sorted(p.name for p in settings.paths.packs_dir.iterdir() if p.is_dir())
-    mode = app.storage.general.get("editor_mode", "document")  # "document" (flowing) | "classic"
+    # Mode is per-tab via the URL (?view=), falling back to the app-wide default; so toggling in
+    # one note's tab never changes another open note's editor.
+    mode = view if view in ("document", "classic") else app.storage.general.get("editor_mode", "document")
 
     if mode == "classic":
         ui.add_head_html('<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>')
@@ -191,21 +194,38 @@ def note_page(path: str = "") -> None:
             new_blocks = editor_to_blocks(e.args)
         except Exception:
             return
+        if not new_blocks and note.blocks:
+            return  # refuse to wipe a non-empty note on an empty/garbled payload
         note.blocks = new_blocks
         refresh()
 
     ui.on("doc_changed", on_doc_changed)
 
-    def _switch_mode(value: str) -> None:
+    async def flush_editor() -> None:
+        """Force any pending (debounced) editor edit through before an explicit save/navigate,
+        so the last keystrokes aren't lost on Save / Ctrl+S / Back / mode-toggle."""
+        if mode != "document":
+            return
+        try:
+            await ui.run_javascript(
+                "if(window._dnEditor){clearTimeout(window._dnDebounce);"
+                "window._dnEditor.save().then(function(d){emitEvent('doc_changed',d);});}")
+            await asyncio.sleep(0.2)  # let doc_changed round-trip into note.blocks
+        except Exception:
+            pass
+
+    async def _switch_mode(value: str) -> None:
         if not value or value == mode:
             return
+        await flush_editor()
         save(notify=False)
-        app.storage.general["editor_mode"] = value
-        ui.run_javascript("window.location.reload()")  # reload re-reads the mode (same URL)
+        app.storage.general["editor_mode"] = value  # remembered default for newly opened notes
+        ui.navigate.to(f"/note?path={quote(str(note_path))}&view={value}")
 
     async def export(kind: str) -> None:
         from ...export import html_to_pdf, html_to_png
 
+        await flush_editor()  # include any pending edit in the export
         out_dir = settings.paths.output_dir
         out_dir.mkdir(parents=True, exist_ok=True)
         html_path = out_dir / f"{note_path.stem}.html"
@@ -347,10 +367,18 @@ def note_page(path: str = "") -> None:
                 ui.button("Delete", icon="delete", on_click=_do_del).props("color=negative no-caps")
         dlg.open()
 
+    async def _go_back() -> None:
+        await flush_editor()
+        save(notify=False)
+        ui.navigate.to("/")
+
+    async def _save_click() -> None:
+        await flush_editor()
+        save()
+
     # ---- toolbar ----
     with ui.row().classes("items-center gap-2 w-full p-2"):
-        ui.button(icon="arrow_back",
-                  on_click=lambda: (save(notify=False), ui.navigate.to("/"))).props("flat round dense")
+        ui.button(icon="arrow_back", on_click=_go_back).props("flat round dense")
         ui.label(note_path.name).classes("text-subtitle1")
         save_label = ui.label("All changes saved").classes("text-caption").style("color:#9b96a8")
         ui.space()
@@ -359,7 +387,7 @@ def note_page(path: str = "") -> None:
             .tooltip("Document = type freely · Classic = block-by-block rows")
         ui.select(themes, label="Theme").bind_value(note, "theme").on_value_change(refresh).props("dense outlined")
         ui.select(packs, label="Pack").bind_value(note, "pack").on_value_change(refresh).props("dense outlined")
-        ui.button("Save", icon="save", on_click=lambda: save()).props("color=positive no-caps")
+        ui.button("Save", icon="save", on_click=_save_click).props("color=positive no-caps")
         ui.button("PDF", icon="picture_as_pdf", on_click=lambda: export("pdf")).props("outline no-caps")
         ui.button("PNG", icon="image", on_click=lambda: export("png")).props("outline no-caps")
         ui.button(icon="delete", on_click=_confirm_delete_note).props("outline color=negative no-caps")
@@ -380,8 +408,9 @@ def note_page(path: str = "") -> None:
                     "flex-wrap:wrap;align-content:flex-start;gap:8px;"
                 )
             else:
-                ui.label('Type freely — press “/” to insert. A block’s ⋮⋮ menu → '
-                         "Left / Right / Full “folds the paper.”").classes("text-caption text-grey px-1")
+                ui.label('Type freely — “/” to insert · a block’s ⋮⋮ menu → Left / Right / Full '
+                         "“folds the paper” · $x^2$ for math, $\\ce{H2O}$ for chemistry") \
+                    .classes("text-caption text-grey px-1")
                 ui.element("div").props("id=editorjs").classes("w-full")
         with ui.column().classes("w-1/2"):
             preview_frame = ui.element("iframe").style(
@@ -403,8 +432,9 @@ def note_page(path: str = "") -> None:
     ui.add_head_html("<script>document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&"
                      "(e.key==='s'||e.key==='S')){e.preventDefault();}});</script>")
 
-    def _on_key(e) -> None:
+    async def _on_key(e) -> None:
         if e.action.keydown and (e.modifiers.ctrl or e.modifiers.meta) and e.key in ("s", "S"):
+            await flush_editor()
             save()
 
     ui.keyboard(on_key=_on_key, ignore=[])  # fire even while a textarea/input is focused

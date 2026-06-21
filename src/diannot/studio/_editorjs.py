@@ -80,13 +80,14 @@ _INIT_TEMPLATE = r"""
 
   var editor = new EditorJS({
     holder:'editorjs', autofocus:false, minHeight:160,
-    placeholder:'Type here…  press "/" to add a heading, list, table or image',
+    placeholder:'Type here…  "/" to insert · $x^2$ for math · $\\ce{H2O}$ for chemistry',
+    inlineToolbar:['bold'],
     data: SEED,
     tools:{
-      header:{ class:Header, inlineToolbar:true, config:{ levels:[1,2,3], defaultLevel:2 } },
-      list:{ class:NestedList, inlineToolbar:true },
-      table:{ class:Table, inlineToolbar:true },
-      quote:{ class:Quote, inlineToolbar:true },
+      header:{ class:Header, inlineToolbar:['bold'], config:{ levels:[1,2,3], defaultLevel:2 } },
+      list:{ class:NestedList, inlineToolbar:['bold'] },
+      table:{ class:Table, inlineToolbar:['bold'] },
+      quote:{ class:Quote, inlineToolbar:['bold'] },
       image:{ class:ImageTool, config:{ uploader:{
         uploadByFile:function(file){ var fd=new FormData(); fd.append('image',file);
           return fetch('/preview/upload?token='+encodeURIComponent(TOKEN),
@@ -112,5 +113,9 @@ _INIT_TEMPLATE = r"""
 
 
 def editor_init_js(seed_json: str, token: str) -> str:
-    """Build the one-shot init script for a note: seed data + upload token baked in."""
-    return _INIT_TEMPLATE.replace("__SEED__", seed_json).replace("__TOKEN__", token)
+    """Build the one-shot init script for a note: seed data + upload token baked in.
+
+    Replace the token (a plain hex id) BEFORE the seed, so note content that happens to contain
+    the literal ``__TOKEN__`` can't be clobbered.
+    """
+    return _INIT_TEMPLATE.replace("__TOKEN__", token).replace("__SEED__", seed_json)

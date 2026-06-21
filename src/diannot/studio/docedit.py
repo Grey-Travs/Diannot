@@ -24,12 +24,14 @@ from ..models import Block, Note
 
 _BLOCK_ADAPTER = TypeAdapter(Block)
 # A paragraph that looks like "**Term** — definition" maps to a term_definition.
-_TERMDEF_RE = re.compile(r"^\s*\*\*(.+?)\*\*\s*[—–-]\s*(.+)$")
+# Require a real em/en dash WITH surrounding spaces (the seeded "**Term** — def" form), so
+# ordinary prose like "**Note**-taking" or "**Cost**-effective" is NOT misread as a term-def.
+_TERMDEF_RE = re.compile(r"^\s*\*\*(.+?)\*\*\s+[—–]\s+(.+)$")
 
 
 def _md_to_html(text: str) -> str:
     """Diannot inline (``**bold**`` + plain) → Editor.js HTML."""
-    esc = _html.escape(text or "", quote=False)
+    esc = _html.escape(text or "", quote=False).replace("\n", "<br>")
     return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", esc)
 
 
@@ -191,7 +193,7 @@ def _ej_to_block(ej: dict):
         return finish(d)
 
     if t == "diannotRaw":
-        block = dict(data.get("block") or {})
+        block = dict(data.get("block") or meta or {})  # fall back to preserved meta if block lost
         if layout:  # allow re-columning an opaque block
             block["layout"] = layout
         return _validate(block)
@@ -202,13 +204,17 @@ def _ej_to_block(ej: dict):
 
 def editor_to_blocks(payload: dict) -> list:
     """Editor.js saved JSON -> validated ``list[Block]``. A block that won't validate falls back
-    to its preserved ``_meta`` original (or is skipped) rather than corrupting the note."""
+    to its preserved dn-tune meta original (or is skipped) rather than corrupting the note."""
     out = []
     for ej in (payload or {}).get("blocks", []):
         try:
             out.append(_ej_to_block(ej))
         except Exception:
-            meta = ((ej.get("data") or {}).get("_meta")) if isinstance(ej, dict) else None
+            # Recover the preserved original from where it's actually stored (the dn tune).
+            meta = None
+            if isinstance(ej, dict):
+                meta = ((ej.get("tunes") or {}).get("dn") or {}).get("meta") \
+                    or (ej.get("data") or {}).get("_meta")
             if meta:
                 try:
                     out.append(_validate(dict(meta)))
