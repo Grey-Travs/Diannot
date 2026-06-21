@@ -18,6 +18,14 @@ def test_chemistry_extension_is_bundled():
     assert "renderMathInElement" in h
 
 
+def test_bare_percent_in_math_is_hardened():
+    # A bare % is a LaTeX comment; the render must wire the preProcess safety net that escapes it.
+    n = Note(title="Pct", blocks=[BodyBlock(text=r"$\text{%}e_4 = \sqrt{(\%e_1)^2}$")])
+    h = render_note_html(n)
+    assert "preProcess" in h
+    assert "renderMathInElement" in h
+
+
 def test_plain_note_pulls_in_no_math_assets():
     n = Note(title="Plain", blocks=[BodyBlock(text="no math here, just words")])
     h = render_note_html(n)

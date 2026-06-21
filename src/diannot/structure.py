@@ -101,7 +101,9 @@ RULES:
    $x^{2}$, $H_2O$ (subscripts with _ , superscripts with ^). Write CHEMICAL formulas and
    equations with the mhchem command \\ce{...}: $\\ce{H2SO4}$, $\\ce{CO2}$,
    $\\ce{2H2 + O2 -> 2H2O}$, $\\ce{CaCO3 ->[\\Delta] CaO + CO2}$. Use this inside body,
-   definitions, list items, table cells and callouts — wherever a formula appears.
+   definitions, list items, table cells and callouts — wherever a formula appears. For a literal
+   PERCENT SIGN inside math write \\% (e.g. percent error $\\%e = \\sqrt{(\\%e_1)^2+(\\%e_2)^2}$);
+   a bare % is a LaTeX comment and silently hides the rest of the line.
 8. LAYOUT (two-column grid): set each block's "layout" — "col1" (left half) and "col2" (right
    half) for side-by-side content (emit a "col1" block immediately followed by its paired "col2"
    block to fill one row); "full" for wide content (banner, tables, large callouts); "auto"

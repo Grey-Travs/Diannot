@@ -22,10 +22,13 @@ from .models import Note
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _KATEX_DIR = PACKAGE_DIR / "assets" / "vendor" / "katex"
 # Auto-render config: $$…$$ for display, $…$ for inline. mhchem adds \ce{…}/\pu{…}.
+# preProcess auto-escapes a BARE "%" to "\%": in TeX a bare % is a comment that silently eats the
+# rest of the line (e.g. \text{%} would hide the rest of a formula), so this hardens every note.
 _KATEX_RENDER_CALL = (
-    "renderMathInElement(document.body,{delimiters:["
-    "{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],"
-    "throwOnError:false});"
+    r"renderMathInElement(document.body,{delimiters:["
+    r"{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],"
+    r"throwOnError:false,"
+    r"preProcess:function(m){return m.replace(/\\?%/g,function(s){return s.length===2?s:'\\%';});}});"
 )
 
 
