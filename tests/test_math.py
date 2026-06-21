@@ -1,6 +1,19 @@
-"""Offline, self-contained KaTeX math + mhchem chemistry in the rendered note."""
-from diannot.models import BodyBlock, Note
+"""Offline, self-contained KaTeX math + mhchem chemistry + Mermaid diagrams in the rendered note."""
+from diannot.models import BodyBlock, DiagramBlock, Note
 from diannot.render import render_note_html
+
+
+def test_diagram_note_embeds_mermaid_offline():
+    n = Note(title="D", blocks=[DiagramBlock(mermaid="graph TD; A-->B")])
+    h = render_note_html(n)
+    assert "mermaid.run()" in h and "__esbuild_esm_mermaid" in h  # bundle inlined + initialized
+    assert "cdn.jsdelivr.net/npm/mermaid" not in h                # no CDN -> renders offline
+
+
+def test_plain_note_pulls_in_no_mermaid():
+    # the .mermaid CSS class exists in the pack stylesheet; assert the heavy bundle isn't pulled in
+    h = render_note_html(Note(title="P", blocks=[BodyBlock(text="no diagram")]))
+    assert "mermaid.run()" not in h and "__esbuild_esm_mermaid" not in h
 
 
 def test_math_note_is_self_contained_and_offline():

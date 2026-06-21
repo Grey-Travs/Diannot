@@ -24,6 +24,7 @@ _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 # a $…$ span that contains a LaTeX command / sub-superscript / braces, or a \ce{…}/\pu{…} call.
 _MATH_RE = re.compile(r"\$\$.+?\$\$|\$[^$\n]*(?:\\[a-zA-Z]+|[_^{}])[^$\n]*\$|\\ce\{|\\pu\{")
 _KATEX_DIR = PACKAGE_DIR / "assets" / "vendor" / "katex"
+_MERMAID_DIR = PACKAGE_DIR / "assets" / "vendor" / "mermaid"
 # Auto-render config: $$…$$ for display, $…$ for inline. mhchem adds \ce{…}/\pu{…}.
 # preProcess auto-escapes a BARE "%" to "\%": in TeX a bare % is a comment that silently eats the
 # rest of the line (e.g. \text{%} would hide the rest of a formula), so this hardens every note.
@@ -187,6 +188,24 @@ def math_assets_html(text: str) -> str:
     return _embedded_katex_html() if has_math(text) else ""
 
 
+def _cdn_mermaid_html() -> str:
+    """Online fallback when the vendored Mermaid bundle is missing."""
+    return ('<script type="module">'
+            "import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';"
+            "mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });</script>")
+
+
+@lru_cache(maxsize=1)
+def _embedded_mermaid_html() -> str:
+    """Self-contained Mermaid block (the vendored bundle inlined) so diagrams render offline in the
+    preview AND in exported HTML/PDF. Cached; falls back to the CDN if the asset is missing."""
+    js = _MERMAID_DIR / "mermaid.min.js"
+    if not js.exists():
+        return _cdn_mermaid_html()
+    return (f"<script>{js.read_text(encoding='utf-8')}</script>"
+            "<script>mermaid.initialize({startOnLoad:false,securityLevel:'loose'});mermaid.run();</script>")
+
+
 def _environment(pack_dir: Path) -> Environment:
     env = Environment(
         loader=FileSystemLoader(str(pack_dir)),
@@ -220,8 +239,8 @@ def render_note_html(
     pack_css = (pack_dir / "base.css").read_text(encoding="utf-8")
 
     font_css = build_font_css(pack_dir)
-    # Only pull in Mermaid/KaTeX when the note uses them. KaTeX is vendored + embedded (offline);
-    # Mermaid is still loaded from a CDN, so notes with diagrams need connectivity to render them.
+    # Only pull in Mermaid/KaTeX when the note uses them; both are vendored + embedded, so a note
+    # with diagrams or math renders fully offline (preview and exported HTML/PDF).
     needs_mermaid = any(b.type == "diagram" for b in note.blocks)
     needs_katex = bool(_MATH_RE.search("\n".join(_strings(note.model_dump()))))
 
@@ -236,4 +255,5 @@ def render_note_html(
         enable_mermaid=needs_mermaid,
         enable_katex=needs_katex,
         katex_html=Markup(_embedded_katex_html()) if needs_katex else "",
+        mermaid_html=Markup(_embedded_mermaid_html()) if needs_mermaid else "",
     )

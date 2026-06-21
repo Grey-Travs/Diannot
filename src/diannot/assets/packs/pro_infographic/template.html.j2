@@ -87,12 +87,7 @@
 <main class="page">
 {% for g in groups %}{% if g[0] == 'full' %}{{ render_block(g[1]) }}{% else %}<div class="cols"><div class="col">{% for b in g[1] %}{{ render_block(b) }}{% endfor %}</div><div class="col">{% for b in g[2] %}{{ render_block(b) }}{% endfor %}</div></div>{% endif %}{% endfor %}
 </main>
-{% if enable_mermaid %}
-<script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-  mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
-</script>
-{% endif %}
+{% if enable_mermaid %}{{ mermaid_html | safe }}{% endif %}
 {% if enable_katex %}{{ katex_html | safe }}{% endif %}
 </body>
 </html>
