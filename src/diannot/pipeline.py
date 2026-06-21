@@ -57,8 +57,13 @@ def ingest_file(
     tesseract: bool = False,
     dpi: int = 200,
     settings: Settings | None = None,
+    on_progress=None,
 ) -> Note:
-    """Ingest one file into a validated :class:`Note` (raises on read/structuring errors)."""
+    """Ingest one file into a validated :class:`Note` (raises on read/structuring errors).
+
+    ``on_progress(done, total)`` is forwarded to the text structurer so a large document's chunked
+    progress can be shown.
+    """
     settings = settings or Settings()
     path = Path(path)
     mode = mode or decide_mode(path.suffix, vision, tesseract, path, pages)
@@ -73,12 +78,14 @@ def ingest_file(
         raw = ocr_image_sources(load_image_sources(path, pages, dpi=dpi))
         if not raw.strip():
             raise ValueError("Tesseract OCR produced no text.")
-        note = structure_text(raw, title=title, theme=theme, pack=pack, model=model, settings=settings)
+        note = structure_text(raw, title=title, theme=theme, pack=pack, model=model,
+                              settings=settings, on_progress=on_progress)
     else:
         raw = load_raw_text(path, pages)
         if not raw.strip():
             raise ValueError("No text extracted (scanned PDF? try --vision).")
-        note = structure_text(raw, title=title, theme=theme, pack=pack, model=model, settings=settings)
+        note = structure_text(raw, title=title, theme=theme, pack=pack, model=model,
+                              settings=settings, on_progress=on_progress)
 
     note.source = str(path)
     return note

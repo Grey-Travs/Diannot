@@ -354,22 +354,44 @@ def _failure(max_retries: int, last_error: str, last_stderr: list[str], provider
     )
 
 
-def structure_text(
-    raw_text: str,
-    title: str | None = None,
-    theme: str = "circulatory",
-    pack: str = "study_notes",
-    model: str | None = None,
-    settings: Settings | None = None,
-    max_retries: int = 2,
-) -> Note:
-    """Structure ``raw_text`` into a validated :class:`Note` (retries on invalid)."""
-    if not raw_text.strip():
-        raise ValueError("Cannot structure empty text.")
-    settings = settings or Settings()
-    model = model or settings.models.structure
-    base_prompt = _build_user_prompt(raw_text, title)
+# Big documents are split into small chunks so each AI call stays well under the timeout and the
+# output token cap — one giant call times out (esp. on slow wifi) and can truncate.
+_CHUNK_TARGET = 6500   # aim for ~this many characters per chunk
+_CHUNK_THRESHOLD = 10000  # only split inputs larger than this
 
+
+def _split_for_structuring(text: str, target: int = _CHUNK_TARGET) -> list[str]:
+    """Split a large document into chunks at blank-line (paragraph) boundaries, packing paragraphs up
+    to ``target`` chars. Small inputs return a single chunk unchanged."""
+    if len(text) <= _CHUNK_THRESHOLD:
+        return [text]
+    chunks: list[str] = []
+    cur = ""
+    for para in re.split(r"\n\s*\n", text):
+        if cur and len(cur) + len(para) + 2 > target:
+            chunks.append(cur)
+            cur = para
+        else:
+            cur = f"{cur}\n\n{para}" if cur else para
+    if cur.strip():
+        chunks.append(cur)
+    # Hard-split any single paragraph that's still much larger than the target.
+    out: list[str] = []
+    for chunk in chunks:
+        if len(chunk) > target * 1.8:
+            out.extend(chunk[i:i + target] for i in range(0, len(chunk), target))
+        else:
+            out.append(chunk)
+    return [c for c in out if c.strip()] or [text]
+
+
+def _structure_one(
+    raw_text: str, title: str | None, theme: str, pack: str, model: str,
+    settings: Settings, max_retries: int,
+) -> Note:
+    """Structure ONE chunk of text into a Note. Retries on invalid output AND on transient
+    provider errors (e.g. a timeout on slow wifi), within the retry budget."""
+    base_prompt = _build_user_prompt(raw_text, title)
     last_error, last_stderr = "unknown error", []
     for attempt in range(max_retries + 1):
         prompt = base_prompt
@@ -378,11 +400,51 @@ def structure_text(
                 f"\n\nYour previous response was invalid ({last_error}). "
                 "Return ONLY a corrected single JSON object."
             )
-        text, last_stderr = _gen_text(prompt, model, settings, settings.providers.notes, SYSTEM_PROMPT)
-        note, last_error = _note_from_response(text, title, theme, pack)
-        if note is not None:
-            return note
+        try:
+            text, last_stderr = _gen_text(prompt, model, settings, settings.providers.notes, SYSTEM_PROMPT)
+        except RuntimeError as exc:
+            if str(exc) == _CLAUDE_MISSING:
+                raise  # not transient — fail fast with the clear message
+            last_error, text = str(exc), ""  # transient (timeout/network) — retry
+        if text:
+            note, last_error = _note_from_response(text, title, theme, pack)
+            if note is not None:
+                return note
     raise _failure(max_retries, last_error, last_stderr, settings.providers.notes)
+
+
+def structure_text(
+    raw_text: str,
+    title: str | None = None,
+    theme: str = "circulatory",
+    pack: str = "study_notes",
+    model: str | None = None,
+    settings: Settings | None = None,
+    max_retries: int = 2,
+    on_progress=None,
+) -> Note:
+    """Structure ``raw_text`` into a validated :class:`Note`. A large document is split into several
+    small AI calls (so it can't time out / truncate) and the resulting blocks are merged into one
+    note. ``on_progress(done, total)`` is called per chunk for UI progress."""
+    if not raw_text.strip():
+        raise ValueError("Cannot structure empty text.")
+    settings = settings or Settings()
+    model = model or settings.models.structure
+    chunks = _split_for_structuring(raw_text)
+
+    merged: Note | None = None
+    for i, chunk in enumerate(chunks):
+        if on_progress:
+            on_progress(i + 1, len(chunks))
+        note = _structure_one(chunk, title if i == 0 else None, theme, pack, model, settings, max_retries)
+        if merged is None:
+            merged = note
+        else:
+            extra = note.blocks
+            if extra and extra[0].type == "banner":  # only the first chunk keeps the chapter banner
+                extra = extra[1:]
+            merged.blocks.extend(extra)
+    return merged  # chunks is never empty, so merged is set
 
 
 def structure_image(

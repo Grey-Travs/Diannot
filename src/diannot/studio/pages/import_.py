@@ -50,7 +50,13 @@ async def _run_import(workspace: str, job: dict, path: Path, params: dict, setti
     """Read + structure the file and save the note. Runs detached from any client."""
     try:
         job["step"] = f"Reading your file and structuring it with {settings.providers.notes}…"
-        note = await run_blocking(ingest_file, path, settings=settings, **params)
+
+        def _progress(done: int, total: int) -> None:
+            job["step"] = (f"Structuring part {done} of {total} with {settings.providers.notes}… "
+                           "(large file — this is split into smaller pieces)"
+                           if total > 1 else f"Structuring your notes with {settings.providers.notes}…")
+
+        note = await run_blocking(ingest_file, path, settings=settings, on_progress=_progress, **params)
         job["step"] = "Saving your notes…"
         dest = _unique_note_path(workspace, params.get("title") or note.title)
         atomic_write_text(dest, note.model_dump_json(indent=2, exclude_none=True))
