@@ -19,6 +19,7 @@ import base64
 import json
 import os
 import re
+import sys
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -42,6 +43,13 @@ _CLAUDE_MISSING = (
     "This build doesn't include the Claude engine. In Settings, pick Gemini (free) "
     "or a local Ollama model."
 )
+
+
+def claude_engine_available() -> bool:
+    """Whether the Claude engine can actually run here. The packaged build strips the bundled
+    Claude CLI (see diannot_studio.spec), so it's only usable when running from source (not frozen).
+    Used to hide the Claude option in the Settings engine picker for the installed app."""
+    return not getattr(sys, "frozen", False)
 
 SYSTEM_PROMPT = """\
 You are a study-notes structuring engine. You convert source study material — messy \
@@ -85,8 +93,9 @@ RULES:
 1. Begin with one banner block for the chapter title. The source may repeat or garble
    the title (duplicated layout layers, OCR typos); DEDUPE it and fix only obvious typos
    in the TITLE (e.g. "Lymphathic"->"Lymphatic", "Systens"->"Systems").
-2. Preserve the educational content faithfully. Do not drop facts, do not add facts, do
-   not paraphrase into something shorter. Reorganize messy/interleaved two-column
+2. Be CONCISE — write compact, scannable study notes, not prose. Tighten wording, cut filler
+   and redundancy, and prefer short phrases over full sentences. But keep EVERY key term, fact,
+   number and formula — never invent or omit facts. Reorganize messy/interleaved two-column
    material back into logical reading order.
 3. Convert obvious "Term — definition" lines into term_definition blocks.
 4. Convert comparison-style content into a table block.
@@ -104,11 +113,17 @@ RULES:
    definitions, list items, table cells and callouts — wherever a formula appears. For a literal
    PERCENT SIGN inside math write \\% (e.g. percent error $\\%e = \\sqrt{(\\%e_1)^2+(\\%e_2)^2}$);
    a bare % is a LaTeX comment and silently hides the rest of the line.
-8. LAYOUT (two-column grid): set each block's "layout" — "col1" (left half) and "col2" (right
-   half) for side-by-side content (emit a "col1" block immediately followed by its paired "col2"
-   block to fill one row); "full" for wide content (banner, tables, large callouts); "auto"
-   (= full width) otherwise. Image blocks may also set "width" (10–100, percent of the column).
-   Do NOT set theme or pack — the app controls those.
+8. LAYOUT — TWO-COLUMN TOPIC CARDS: organize a multi-topic note as cards in two columns. Put each
+   major concept AND its sub-points into ONE "list" block (a card): the FIRST item is the concept
+   name (in **bold**) plus a short one-line definition; its "children" are the concise sub-points
+   (each may **bold** its key term and include $math$). Emit one such list block per major concept.
+   Then split the cards across the two columns via each card's "layout": put a coherent group of
+   related concepts in "col1" (left) and the rest in "col2" (right) — e.g. Accuracy + Precision in
+   col1, the error types in col2 — keeping related concepts in the same column and the two columns
+   roughly balanced. Use "full" only for the banner, a wide table, or a concept that truly needs the
+   full width; use "auto" (= full width) for a note with a single topic. Default every multi-topic
+   note to this two-column card layout. Image blocks may also set "width" (10–100, percent of the
+   column). Do NOT set theme or pack — the app controls those.
 9. If you are given page IMAGES: transcribe ALL visible text faithfully and in logical
    reading order (reconstruct across columns), INCLUDING any formulas, equations, statistical
    notation or chemical reactions — transcribe those as LaTeX per rule 7. For photographs,

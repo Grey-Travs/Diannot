@@ -1,6 +1,17 @@
 """Two-column layout: left/right runs flow in independent columns (no shared-row-height gaps)."""
-from diannot.models import BannerBlock, BodyBlock, Note, TableBlock
+from diannot.models import BannerBlock, BodyBlock, ListBlock, ListItem, Note, TableBlock
 from diannot.render import _layout_groups, render_note_html
+
+
+def test_column_blocks_render_as_themed_topic_cards():
+    n = Note(title="T", blocks=[
+        ListBlock(items=[ListItem(text="**Accuracy** — close to true")], layout="col1"),
+        ListBlock(items=[ListItem(text="**Systematic** — has a cause")], layout="col2"),
+    ])
+    h = render_note_html(n)
+    assert '<div class="cols">' in h          # two-column section
+    assert ".cols > .col > *" in h            # the topic-card CSS is present
+    assert "var(--c-key-bg)" in h             # cards use the theme's colored-box vars
 
 
 def test_layout_groups_partitions_runs_and_breaks_on_full():

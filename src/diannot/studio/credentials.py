@@ -137,12 +137,21 @@ def load_embedded_defaults() -> None:
     try:
         from ..config import load_config_file, update_config
 
-        if not load_config_file().get("providers"):
+        providers = dict(load_config_file().get("providers") or {})
+        if not providers:
             update_config("providers", {
                 "notes": getattr(_embedded, "DEFAULT_NOTES_PROVIDER", "gemini"),
                 "study": getattr(_embedded, "DEFAULT_STUDY_PROVIDER", "gemini"),
                 "gemini_model": getattr(_embedded, "DEFAULT_GEMINI_MODEL", "gemini-2.5-flash"),
             })
+        elif providers.get("notes") == "claude" or providers.get("study") == "claude":
+            # This packaged build has no Claude CLI; heal a previously-saved "claude" choice.
+            healed = {**providers}
+            if providers.get("notes") == "claude":
+                healed["notes"] = "gemini"
+            if providers.get("study") == "claude":
+                healed["study"] = "gemini"
+            update_config("providers", healed)
     except Exception:
         pass
 

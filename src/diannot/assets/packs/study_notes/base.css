@@ -46,9 +46,18 @@ body {
    a .cols section whose two columns flow INDEPENDENTLY — so a shorter side doesn't leave a gap. */
 .page > * { grid-column: 1 / -1; }
 .lay-full, .full { grid-column: 1 / -1; }
-.cols { display: flex; gap: 26px; align-items: flex-start; }
+.cols { display: flex; gap: 22px; align-items: flex-start; }
 .cols > .col { flex: 1 1 0; min-width: 0; }
-.cols > .col > *:first-child { margin-top: 0; }
+/* Each top-level block in a column is a themed "topic card" box. */
+.cols > .col > * { background: var(--c-key-bg); border: 1.5px solid var(--c-key-border);
+  border-radius: 10px; padding: 9px 12px; margin: 0 0 12px; box-shadow: 0 1px 5px rgba(0, 0, 0, .06);
+  break-inside: avoid; }
+.cols > .col > *:last-child { margin-bottom: 0; }
+/* A card's first list item reads as its heading (no bullet, flush left). */
+.cols > .col > .list-wrap { margin: 0; }
+.cols > .col > .list-wrap > ul.list > li:first-child,
+.cols > .col > .list-wrap > ol.list > li:first-child { padding-left: 0; margin-bottom: 4px; }
+.cols > .col > .list-wrap > ul.list > li:first-child::before { content: none; }
 
 /* ---- Banner (poster header) ---- */
 .banner { grid-column: 1 / -1; text-align: center; margin: 0 0 16px; break-after: avoid; }

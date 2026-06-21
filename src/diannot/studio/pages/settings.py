@@ -59,12 +59,22 @@ def settings_page() -> None:
 
         # ---- AI engine (free / offline option) ----
         with ui.card().classes("p-4 w-full gap-2"):
+            from ...structure import claude_engine_available
+            engines = dict(_ENGINES)
+            if not claude_engine_available():  # Claude CLI isn't in the packaged build
+                engines.pop("claude", None)
+            notes_val = settings.providers.notes if settings.providers.notes in engines else "gemini"
+            study_val = settings.providers.study if settings.providers.study in engines else "gemini"
             ui.label("AI engine").classes("text-subtitle1 text-bold")
-            ui.label("Make notes with free Gemini (online, no setup), a local model (Ollama, offline), "
-                     "or Claude (your login / key). Study tools can use any of these.").classes("text-caption text-grey")
-            notes_engine = ui.select(_ENGINES, value=settings.providers.notes,
+            ui.label("Make notes with free Gemini (online, no setup), a local model (Ollama, offline)"
+                     + (", or Claude (your login / key)" if "claude" in engines else "")
+                     + ". Study tools can use any of these.").classes("text-caption text-grey")
+            if "claude" not in engines and "claude" in (settings.providers.notes, settings.providers.study):
+                ui.label("Claude isn't included in this build — using Gemini (free).") \
+                    .classes("text-caption text-warning")
+            notes_engine = ui.select(engines, value=notes_val,
                                      label="Make-notes engine").classes("w-80")
-            study_engine = ui.select(_ENGINES, value=settings.providers.study,
+            study_engine = ui.select(engines, value=study_val,
                                      label="Study (quiz / flashcards) engine").classes("w-80")
 
             with ui.row().classes("items-center gap-3"):
