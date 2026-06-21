@@ -60,18 +60,18 @@ def settings_page() -> None:
         # ---- AI engine (free / offline option) ----
         with ui.card().classes("p-4 w-full gap-2"):
             from ...structure import claude_engine_available
-            engines = dict(_ENGINES)
-            if not claude_engine_available():  # Claude CLI isn't in the packaged build
-                engines.pop("claude", None)
+            engines = dict(_ENGINES)  # always offer Claude; show how to enable it if it isn't ready
+            claude_ready = claude_engine_available()
             notes_val = settings.providers.notes if settings.providers.notes in engines else "gemini"
             study_val = settings.providers.study if settings.providers.study in engines else "gemini"
             ui.label("AI engine").classes("text-subtitle1 text-bold")
-            ui.label("Make notes with free Gemini (online, no setup), a local model (Ollama, offline)"
-                     + (", or Claude (your login / key)" if "claude" in engines else "")
-                     + ". Study tools can use any of these.").classes("text-caption text-grey")
-            if "claude" not in engines and "claude" in (settings.providers.notes, settings.providers.study):
-                ui.label("Claude isn't included in this build — using Gemini (free).") \
-                    .classes("text-caption text-warning")
+            ui.label("Make notes with free Gemini (online, no setup), a local model (Ollama, offline), "
+                     "or Claude (uses your own Claude subscription). Claude has the highest limits, so "
+                     "it's best for large files. Study tools can use any of these.").classes("text-caption text-grey")
+            if not claude_ready:
+                ui.label("To enable Claude: install it once with  npm i -g @anthropic-ai/claude-code  "
+                         "(needs Node.js), then restart Diannot. It uses your own Claude login — no API "
+                         "cost.").classes("text-caption text-grey")
             notes_engine = ui.select(engines, value=notes_val,
                                      label="Make-notes engine").classes("w-80")
             study_engine = ui.select(engines, value=study_val,
@@ -123,8 +123,9 @@ def settings_page() -> None:
         with ui.card().classes("p-4 w-full gap-2"):
             ui.label("Gemini connection (free)").classes("text-subtitle1 text-bold")
             if credentials.EMBEDDED_KEY_ACTIVE:
-                ui.label("Using the bundled free key — shared with everyone who has this app. Add your "
-                         "own free key below for a private limit.").classes("text-caption text-grey")
+                ui.label("Using the bundled free key — shared with everyone who has this app, so its limit "
+                         "is tight. For large files, add your own free key below (your own quota) or use "
+                         "Claude.").classes("text-caption text-grey")
             gstatus = ui.label(gemini_connection_status()).classes("text-grey")
             gkey = ui.input(label="Gemini API key", password=True, placeholder="AIza…").classes("w-full")
             gsave_dev = ui.switch("Save this key on this computer")
@@ -171,8 +172,11 @@ def settings_page() -> None:
             with ui.row().classes("gap-2"):
                 ui.button("Use key", icon="vpn_key", on_click=use_key).props("no-caps")
                 ui.button("Test connection", icon="wifi_tethering", on_click=test).props("flat no-caps")
-            ui.label("Using the Claude desktop app? You may already be signed in — just press Test. "
-                     "Viewing, flashcards, review, glossary, search and export never need a key.").classes("text-caption text-grey")
+            ui.label("Best way to use Claude: install the Claude Code CLI once "
+                     "(npm i -g @anthropic-ai/claude-code, needs Node.js) and it uses your own Claude "
+                     "subscription automatically — no key, no per-use cost. The API key above is an "
+                     "alternative (pay-per-use). Viewing, flashcards, review, glossary, search and export "
+                     "never need either.").classes("text-caption text-grey")
 
         # ---- Defaults ----
         with ui.card().classes("p-4 w-full gap-2"):

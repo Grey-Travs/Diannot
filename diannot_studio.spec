@@ -24,8 +24,9 @@ for pkg in ("diannot", "certifi"):
     datas += collect_data_files(pkg)
 
 # Claude Agent SDK: keep the python package (so `import claude_agent_sdk` works) but DROP its
-# bundled CLI `_bundled/claude.exe` (~214 MB). The released build defaults to Gemini/Ollama, so
-# the Claude *engine* isn't used here; this nearly halves the download.
+# bundled CLI `_bundled/claude.exe` (~214 MB) — this nearly halves the download. The build defaults
+# to the free Gemini key; the Claude engine still works for users who install the Claude Code CLI
+# themselves (structure._find_claude_cli detects it and the SDK is pointed at it via cli_path).
 datas += [
     (src, dst) for (src, dst) in collect_data_files("claude_agent_sdk")
     if "_bundled" not in src.replace("\\", "/").lower()

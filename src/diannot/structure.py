@@ -19,7 +19,11 @@ import base64
 import json
 import os
 import re
+import shutil
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -32,7 +36,7 @@ from pydantic import ValidationError
 
 from . import providers as _providers
 from .config import Settings
-from .models import Note
+from .models import BannerBlock, BodyBlock, Note
 
 try:
     from claude_agent_sdk import CLINotFoundError as _CLINotFound
@@ -40,16 +44,34 @@ except Exception:  # SDK build without this exception class
     _CLINotFound = None
 
 _CLAUDE_MISSING = (
-    "This build doesn't include the Claude engine. In Settings, pick Gemini (free) "
-    "or a local Ollama model."
+    "Claude needs the Claude Code CLI. Install it once: npm i -g @anthropic-ai/claude-code "
+    "(needs Node.js, then restart Diannot) — it uses your own Claude login, no API cost. "
+    "Or pick Gemini (free) in Settings."
 )
 
 
+@lru_cache(maxsize=1)
+def _find_claude_cli() -> str | None:
+    """Locate a system-installed Claude Code CLI so the Agent SDK can use it via ``cli_path`` (the
+    packaged build ships without the bundled CLI). A logged-in CLI uses the user's Claude subscription
+    (e.g. Max) — no per-token API cost. Cached."""
+    for name in ("claude", "claude.cmd", "claude.exe"):
+        found = shutil.which(name)
+        if found:
+            return found
+    for base in (os.environ.get("APPDATA", ""), os.environ.get("LOCALAPPDATA", "")):
+        for name in ("claude.cmd", "claude.exe"):
+            cand = os.path.join(base, "npm", name) if base else ""
+            if cand and os.path.isfile(cand):
+                return cand
+    return None
+
+
 def claude_engine_available() -> bool:
-    """Whether the Claude engine can actually run here. The packaged build strips the bundled
-    Claude CLI (see diannot_studio.spec), so it's only usable when running from source (not frozen).
-    Used to hide the Claude option in the Settings engine picker for the installed app."""
-    return not getattr(sys, "frozen", False)
+    """Claude works here if NOT a packaged build (the SDK's bundled CLI is present), OR a
+    system-installed Claude Code CLI is found (we point the SDK at it via ``cli_path``). So a user
+    with Claude Code installed can use Claude even in the installed app."""
+    return (not getattr(sys, "frozen", False)) or _find_claude_cli() is not None
 
 SYSTEM_PROMPT = """\
 You are a study-notes structuring engine. You convert source study material — messy \
@@ -216,18 +238,24 @@ def _note_from_response(
 
 
 def _options(model: str, system: str, stderr_sink) -> ClaudeAgentOptions:
-    return ClaudeAgentOptions(
+    kwargs = dict(
         model=model,
         system_prompt=system,
         allowed_tools=[],
         max_turns=1,
         setting_sources=[],  # ignore project/user/local settings for a clean call
         permission_mode="bypassPermissions",
-        # Clear the nested-session flag so the bundled CLI runs from inside a
-        # Claude Code session.
+        # Clear the nested-session flag so the CLI runs from inside a Claude Code session.
         env={"CLAUDECODE": ""},
         stderr=stderr_sink,
     )
+    # In the packaged build the bundled CLI was stripped; point the SDK at a system-installed
+    # Claude Code CLI (which uses the user's logged-in subscription).
+    if getattr(sys, "frozen", False):
+        cli = _find_claude_cli()
+        if cli:
+            kwargs["cli_path"] = cli
+    return ClaudeAgentOptions(**kwargs)
 
 
 async def _collect(messages) -> str:
@@ -354,10 +382,14 @@ def _failure(max_retries: int, last_error: str, last_stderr: list[str], provider
     )
 
 
-# Big documents are split into small chunks so each AI call stays well under the timeout and the
-# output token cap — one giant call times out (esp. on slow wifi) and can truncate.
-_CHUNK_TARGET = 6500   # aim for ~this many characters per chunk
-_CHUNK_THRESHOLD = 10000  # only split inputs larger than this
+# Big documents are split into chunks so each AI call stays well under the timeout and output cap
+# (one giant call times out and can truncate), and the chunks are structured CONCURRENTLY so a huge
+# file finishes in a reasonable time instead of dozens of serial calls.
+_CHUNK_TARGET = 9000   # aim for ~this many characters per chunk
+_CHUNK_THRESHOLD = 11000  # only split inputs larger than this
+# Concurrent AI calls per provider: the SHARED free Gemini key has a tight rate limit, so go gentle;
+# Claude (the user's own subscription) and a local Ollama have headroom.
+_PARALLEL = {"gemini": 2, "claude": 6, "ollama": 1}
 
 
 def _split_for_structuring(text: str, target: int = _CHUNK_TARGET) -> list[str]:
@@ -394,6 +426,10 @@ def _structure_one(
     base_prompt = _build_user_prompt(raw_text, title)
     last_error, last_stderr = "unknown error", []
     for attempt in range(max_retries + 1):
+        if attempt:
+            # A rate-limit needs the per-minute window to clear; ordinary errors just need a moment.
+            rate_limited = "limit was hit" in last_error.lower()
+            time.sleep(22 if rate_limited else min(2 ** attempt, 8))
         prompt = base_prompt
         if attempt:
             prompt += (
@@ -413,6 +449,23 @@ def _structure_one(
     raise _failure(max_retries, last_error, last_stderr, settings.providers.notes)
 
 
+def _structure_one_safe(
+    raw_text: str, title: str | None, theme: str, pack: str, model: str,
+    settings: Settings, max_retries: int, is_first: bool,
+) -> Note:
+    """Like :func:`_structure_one` but NEVER raises (used in the parallel path): if a chunk can't be
+    structured after retries, keep its raw text as a low-confidence body block so no content is lost
+    and the rest of the big import still succeeds. The Claude-missing error still propagates."""
+    try:
+        return _structure_one(raw_text, title, theme, pack, model, settings, max_retries)
+    except RuntimeError as exc:
+        if str(exc) == _CLAUDE_MISSING:
+            raise
+        blocks = ([BannerBlock(text=title)] if (is_first and title) else [])
+        blocks.append(BodyBlock(text=raw_text.strip()[:4000], confidence="low"))
+        return Note(title=title or "Notes", theme=theme, pack=pack, blocks=blocks)
+
+
 def structure_text(
     raw_text: str,
     title: str | None = None,
@@ -424,27 +477,45 @@ def structure_text(
     on_progress=None,
 ) -> Note:
     """Structure ``raw_text`` into a validated :class:`Note`. A large document is split into several
-    small AI calls (so it can't time out / truncate) and the resulting blocks are merged into one
-    note. ``on_progress(done, total)`` is called per chunk for UI progress."""
+    small AI calls structured CONCURRENTLY (so a big file can't time out and finishes quickly), and
+    the resulting blocks are merged into one note (keeping a single banner). ``on_progress(done,
+    total)`` is called as each chunk completes, for UI progress."""
     if not raw_text.strip():
         raise ValueError("Cannot structure empty text.")
     settings = settings or Settings()
     model = model or settings.models.structure
     chunks = _split_for_structuring(raw_text)
 
-    merged: Note | None = None
-    for i, chunk in enumerate(chunks):
+    if len(chunks) == 1:
         if on_progress:
-            on_progress(i + 1, len(chunks))
-        note = _structure_one(chunk, title if i == 0 else None, theme, pack, model, settings, max_retries)
-        if merged is None:
-            merged = note
-        else:
-            extra = note.blocks
-            if extra and extra[0].type == "banner":  # only the first chunk keeps the chapter banner
-                extra = extra[1:]
-            merged.blocks.extend(extra)
-    return merged  # chunks is never empty, so merged is set
+            on_progress(1, 1)
+        return _structure_one(chunks[0], title, theme, pack, model, settings, max_retries)
+
+    # Structure the chunks concurrently (provider-aware: gentle on the shared free key), keeping
+    # results in document order for a clean merge. Extra retries so a rate-limited chunk recovers.
+    workers = min(_PARALLEL.get(settings.providers.notes, 2), len(chunks))
+    chunk_retries = max(max_retries, 3)
+    results: list[Note | None] = [None] * len(chunks)
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_structure_one_safe, chunk, title if i == 0 else None,
+                        theme, pack, model, settings, chunk_retries, i == 0): i
+            for i, chunk in enumerate(chunks)
+        }
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+            done += 1
+            if on_progress:
+                on_progress(done, len(chunks))
+
+    merged = results[0]
+    for note in results[1:]:
+        extra = note.blocks
+        if extra and extra[0].type == "banner":  # only the first chunk keeps the chapter banner
+            extra = extra[1:]
+        merged.blocks.extend(extra)
+    return merged
 
 
 def structure_image(

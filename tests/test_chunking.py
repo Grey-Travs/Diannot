@@ -41,7 +41,8 @@ def test_merge_keeps_one_banner_and_combines_chunk_blocks(monkeypatch):
     assert sum(1 for b in note.blocks if b.type == "banner") == 1          # exactly ONE banner
     assert sum(1 for b in note.blocks if b.type == "body") == len(calls)   # one body per chunk
     assert len(calls) > 1                                                  # actually chunked
-    assert calls[0][1] == "Doc" and calls[1][1] is None                    # title only on first chunk
+    titles = [t for _, t in calls]                                         # (parallel: order varies)
+    assert titles.count("Doc") == 1 and titles.count(None) == len(calls) - 1  # title only on chunk 0
 
 
 def test_single_chunk_path_still_works(monkeypatch):

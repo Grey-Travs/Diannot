@@ -21,6 +21,7 @@ from nicegui import background_tasks, ui
 from ...config import Settings
 from ...io_utils import atomic_write_text
 from ...pipeline import SUPPORTED_SUFFIXES, decide_mode, ingest_file
+from .. import credentials
 from ..background import run_blocking
 from ..layout import studio_layout
 from ..workspace import current_workspace
@@ -117,6 +118,13 @@ def import_page() -> None:
         ui.separator()
         ui.label(f"File: {pending['name']}").classes("text-subtitle1")
         ui.label(_MODE_MSG.get(mode, "")).classes("text-grey")
+        # Large files become many AI calls; the shared free Gemini key has a tight limit.
+        big = path.stat().st_size > 200_000
+        if big and settings.providers.notes == "gemini" and credentials.EMBEDDED_KEY_ACTIVE:
+            ui.label("Heads up: this is a large file, so it's split into many AI calls. The shared free "
+                     "Gemini key may hit its limit partway through (those parts come in as raw text). For "
+                     "a big file, add your own free Gemini key in Settings, or switch the engine to "
+                     "Claude — both have far more headroom.").classes("text-caption text-warning")
         title = ui.input(label="Note title",
                          value=Path(pending["name"]).stem.replace("_", " ").title()).classes("w-full")
         theme = ui.select(themes, value=settings.render.default_theme, label="Theme").classes("w-60")
