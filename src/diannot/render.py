@@ -45,6 +45,33 @@ def inline_md(text: str) -> Markup:
     return Markup(_BOLD_RE.sub(r"<strong>\1</strong>", escaped))
 
 
+def _layout_groups(blocks) -> list:
+    """Partition blocks into full-width items and side-by-side sections so the two columns flow
+    INDEPENDENTLY (no shared-row-height gaps): a run of col1/col2 blocks becomes one
+    ``("cols", left, right)`` group; everything else is a ``("full", block)`` group.
+    """
+    groups: list = []
+    left: list = []
+    right: list = []
+
+    def flush() -> None:
+        if left or right:
+            groups.append(("cols", list(left), list(right)))
+            left.clear()
+            right.clear()
+
+    for b in blocks:
+        if b.layout == "col1":
+            left.append(b)
+        elif b.layout == "col2":
+            right.append(b)
+        else:
+            flush()
+            groups.append(("full", b))
+    flush()
+    return groups
+
+
 def load_theme(name: str, themes_dir: Path) -> dict:
     """Load a theme TOML file (e.g. ``circulatory``) into a dict."""
     path = themes_dir / f"{name}.toml"
@@ -202,6 +229,7 @@ def render_note_html(
     template = env.get_template("template.html.j2")
     return template.render(
         note=note,
+        groups=_layout_groups(note.blocks),
         theme=theme_data,
         pack_css=pack_css,
         font_css=font_css,

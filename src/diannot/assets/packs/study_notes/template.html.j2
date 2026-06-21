@@ -85,7 +85,7 @@
 </head>
 <body>
 <main class="page">
-{% for b in note.blocks %}{{ render_block(b) }}{% endfor %}
+{% for g in groups %}{% if g[0] == 'full' %}{{ render_block(g[1]) }}{% else %}<div class="cols"><div class="col">{% for b in g[1] %}{{ render_block(b) }}{% endfor %}</div><div class="col">{% for b in g[2] %}{{ render_block(b) }}{% endfor %}</div></div>{% endif %}{% endfor %}
 </main>
 {% if enable_mermaid %}
 <script type="module">

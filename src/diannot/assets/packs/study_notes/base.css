@@ -42,12 +42,13 @@ body {
   }
 }
 
-/* Explicit two-column placement. Default: every block spans full width; set a block
-   to Left (col1) / Right (col2) to build a side-by-side row. */
+/* Default: every block spans full width. A run of Left (col1) / Right (col2) blocks is wrapped in
+   a .cols section whose two columns flow INDEPENDENTLY — so a shorter side doesn't leave a gap. */
 .page > * { grid-column: 1 / -1; }
-.lay-col1, .col1 { grid-column: 1; }
-.lay-col2, .col2 { grid-column: 2; }
 .lay-full, .full { grid-column: 1 / -1; }
+.cols { display: flex; gap: 26px; align-items: flex-start; }
+.cols > .col { flex: 1 1 0; min-width: 0; }
+.cols > .col > *:first-child { margin-top: 0; }
 
 /* ---- Banner (poster header) ---- */
 .banner { grid-column: 1 / -1; text-align: center; margin: 0 0 16px; break-after: avoid; }
