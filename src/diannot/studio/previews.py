@@ -6,10 +6,11 @@ Generalizes the editor's ``/preview`` pattern. Pages point an iframe at
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import Query
+from fastapi import File, Query, UploadFile
 from nicegui import app
-from starlette.responses import FileResponse, HTMLResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse
 
 from ..cards import Deck, render_deck_html
 from ..config import Settings
@@ -39,6 +40,21 @@ def preview_quiz(path: str = Query(...), v: int = 0, theme: str = "circulatory")
 # Live, in-memory notes being edited (keyed by a per-tab token) so the preview
 # reflects UNSAVED edits. The Note page registers/cleans up its token.
 LIVE: dict[str, Note] = {}
+# Where the document editor's image uploads land, per live token (the note's .assets dir).
+LIVE_ASSETS: dict[str, Path] = {}
+
+
+@app.post("/preview/upload")
+async def upload_live_image(token: str = Query(...), image: UploadFile = File(...)):
+    """Receive a dropped/pasted image from the document editor and store it in the note's
+    ``.assets`` dir; reply in the shape Editor.js's Image tool expects."""
+    assets_dir = LIVE_ASSETS.get(token)
+    if assets_dir is None:
+        return JSONResponse({"success": 0, "message": "no live note"})
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    dest = assets_dir / Path(image.filename or "image").name
+    dest.write_bytes(await image.read())
+    return JSONResponse({"success": 1, "file": {"url": f"/file?path={quote(str(dest.resolve()))}"}})
 
 
 @app.get("/preview/live", response_class=HTMLResponse)

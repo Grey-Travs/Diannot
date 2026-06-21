@@ -9,21 +9,30 @@ be open at once and the preview (``/preview/live?token=``) reflects UNSAVED edit
 """
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
 from urllib.parse import quote
 
 from nicegui import app, ui
 
-from ...config import Settings
+from ...config import PACKAGE_DIR, Settings
 from ...editor import BLOCK_TYPES, _new_block
 from ...io_utils import atomic_write_text
 from ...models import ListItem, Note
 from ...render import render_note_html
+from .._editorjs import EDITOR_CSS, VENDOR_SCRIPTS, editor_init_js
 from ..background import run_blocking
+from ..docedit import editor_to_blocks, note_to_editor
 from ..layout import studio_layout
-from ..previews import LIVE
+from ..previews import LIVE, LIVE_ASSETS
 from ..workspace import delete_note
+
+# Vendored Editor.js (offline) is served from the package assets dir.
+try:
+    app.add_static_files("/dnvendor", str(PACKAGE_DIR / "assets" / "vendor"))
+except Exception:
+    pass
 
 # Reorder via SortableJS (handle-scoped); the container persists across rebuild().
 _SORTABLE_INIT = (
@@ -80,13 +89,20 @@ def note_page(path: str = "") -> None:
     settings = Settings()
     token = uuid.uuid4().hex
     LIVE[token] = note
+    assets_dir = note_path.parent / f"{note_path.stem}.assets"
+    LIVE_ASSETS[token] = assets_dir
     state = {"v": 0, "dirty": False, "ready": False}
     bodies: list = []  # the (hidden) edit forms, for collapse/expand all
-    assets_dir = note_path.parent / f"{note_path.stem}.assets"
     themes = sorted(p.stem for p in settings.paths.themes_dir.glob("*.toml"))
     packs = sorted(p.name for p in settings.paths.packs_dir.iterdir() if p.is_dir())
+    mode = app.storage.general.get("editor_mode", "document")  # "document" (flowing) | "classic"
 
-    ui.add_head_html('<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>')
+    if mode == "classic":
+        ui.add_head_html('<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>')
+    else:
+        ui.add_head_html(EDITOR_CSS)
+        for _src in VENDOR_SCRIPTS:
+            ui.add_head_html(f'<script src="/dnvendor/editorjs/{_src}"></script>')
     block_col: ui.row
     preview_frame: ui.element
 
@@ -165,6 +181,27 @@ def note_page(path: str = "") -> None:
             rebuild()
 
     ui.on("block_reorder", on_reorder)
+
+    def on_doc_changed(e) -> None:
+        """Document editor saved -> rebuild note.blocks + bump the styled preview.
+
+        ``editor_to_blocks`` is loss-safe; the existing autosave persists the result.
+        """
+        try:
+            new_blocks = editor_to_blocks(e.args)
+        except Exception:
+            return
+        note.blocks = new_blocks
+        refresh()
+
+    ui.on("doc_changed", on_doc_changed)
+
+    def _switch_mode(value: str) -> None:
+        if not value or value == mode:
+            return
+        save(notify=False)
+        app.storage.general["editor_mode"] = value
+        ui.run_javascript("window.location.reload()")  # reload re-reads the mode (same URL)
 
     async def export(kind: str) -> None:
         from ...export import html_to_pdf, html_to_png
@@ -317,6 +354,9 @@ def note_page(path: str = "") -> None:
         ui.label(note_path.name).classes("text-subtitle1")
         save_label = ui.label("All changes saved").classes("text-caption").style("color:#9b96a8")
         ui.space()
+        ui.toggle({"document": "Document", "classic": "Classic"}, value=mode) \
+            .props("dense no-caps unelevated").on_value_change(lambda e: _switch_mode(e.value)) \
+            .tooltip("Document = type freely · Classic = block-by-block rows")
         ui.select(themes, label="Theme").bind_value(note, "theme").on_value_change(refresh).props("dense outlined")
         ui.select(packs, label="Pack").bind_value(note, "pack").on_value_change(refresh).props("dense outlined")
         ui.button("Save", icon="save", on_click=lambda: save()).props("color=positive no-caps")
@@ -327,26 +367,36 @@ def note_page(path: str = "") -> None:
     # ---- editor + preview ----
     with ui.row().classes("w-full no-wrap gap-4 px-2"):
         with ui.column().classes("w-1/2"):
-            with ui.row().classes("items-center gap-2 w-full"):
-                kind = ui.select(BLOCK_TYPES, value="body", label="Add block").props("dense outlined")
-                ui.button("Add", icon="add", on_click=lambda: add(kind.value)).props("no-caps")
-                ui.space()
-                ui.button(icon="unfold_less", on_click=lambda: [bd.set_visibility(False) for bd in bodies]) \
-                    .props("flat dense round").tooltip("Collapse all")
-                ui.button(icon="unfold_more", on_click=lambda: [bd.set_visibility(True) for bd in bodies]) \
-                    .props("flat dense round").tooltip("Expand all")
-            block_col = ui.row().classes("w-full blocklist").style(
-                "flex-wrap:wrap;align-content:flex-start;gap:8px;"
-            )
+            if mode == "classic":
+                with ui.row().classes("items-center gap-2 w-full"):
+                    kind = ui.select(BLOCK_TYPES, value="body", label="Add block").props("dense outlined")
+                    ui.button("Add", icon="add", on_click=lambda: add(kind.value)).props("no-caps")
+                    ui.space()
+                    ui.button(icon="unfold_less", on_click=lambda: [bd.set_visibility(False) for bd in bodies]) \
+                        .props("flat dense round").tooltip("Collapse all")
+                    ui.button(icon="unfold_more", on_click=lambda: [bd.set_visibility(True) for bd in bodies]) \
+                        .props("flat dense round").tooltip("Expand all")
+                block_col = ui.row().classes("w-full blocklist").style(
+                    "flex-wrap:wrap;align-content:flex-start;gap:8px;"
+                )
+            else:
+                ui.label('Type freely — press “/” to insert. A block’s ⋮⋮ menu → '
+                         "Left / Right / Full “folds the paper.”").classes("text-caption text-grey px-1")
+                ui.element("div").props("id=editorjs").classes("w-full")
         with ui.column().classes("w-1/2"):
             preview_frame = ui.element("iframe").style(
                 "width:100%;height:80vh;border:1px solid #ccc;border-radius:6px;"
             )
             preview_frame._props["src"] = f"/preview/live?token={token}&v=0"
 
-    rebuild()
-    state["ready"] = True
-    ui.timer(0.3, lambda: ui.run_javascript(_SORTABLE_INIT), once=True)
+    if mode == "classic":
+        rebuild()  # initial render while ready is False, so it won't flag "unsaved"
+        state["ready"] = True
+        ui.timer(0.3, lambda: ui.run_javascript(_SORTABLE_INIT), once=True)
+    else:
+        state["ready"] = True
+        _seed = json.dumps(note_to_editor(note))
+        ui.timer(0.4, lambda: ui.run_javascript(editor_init_js(_seed, token)), once=True)
     ui.timer(1.5, _autosave)  # crash-safe autosave shortly after any edit
 
     # Ctrl+S saves (and stop the browser's own save dialog in web mode).
