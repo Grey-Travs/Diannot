@@ -122,8 +122,11 @@ ul.list li::before { content: "\2022"; color: var(--c-primary); position: absolu
 ul.list ul.list li::before { content: "\25E6"; color: var(--c-accent); }
 
 /* ---- Tables ---- */
-.table-wrap { margin: 9px 0; break-inside: avoid; }
-table.tbl { width: 100%; border-collapse: collapse; font-size: 9.6px; }
+.table-wrap { margin: 9px 0; break-inside: avoid; overflow-x: auto; }
+/* table-layout:fixed + wrapping keeps a table INSIDE its column (it can't size to content and spill
+   over the neighbouring column); long cell text and words wrap instead of overflowing. */
+table.tbl { width: 100%; border-collapse: collapse; font-size: 9.6px; table-layout: fixed; }
+table.tbl th, table.tbl td { overflow-wrap: anywhere; word-break: break-word; }
 table.tbl th {
   background: var(--c-thead-bg);
   color: var(--c-thead-ink);

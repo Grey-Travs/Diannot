@@ -136,8 +136,11 @@ ul.list li::before { content: "\25B8"; color: var(--gold); position: absolute; l
 ol.list li { margin: 2px 0; }
 
 /* ---- Tables ---- */
-.table-wrap { margin: 9px 0; break-inside: avoid; }
-table.tbl { width: 100%; border-collapse: collapse; font-size: 9.6px; background: var(--navy-2); }
+.table-wrap { margin: 9px 0; break-inside: avoid; overflow-x: auto; }
+/* table-layout:fixed + wrapping keeps a table INSIDE its column (it can't size to content and spill
+   over the neighbouring column); long cell text and words wrap instead of overflowing. */
+table.tbl { width: 100%; border-collapse: collapse; font-size: 9.6px; background: var(--navy-2); table-layout: fixed; }
+table.tbl th, table.tbl td { overflow-wrap: anywhere; word-break: break-word; }
 table.tbl th {
   background: var(--gold);
   color: var(--navy);

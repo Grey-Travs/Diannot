@@ -120,7 +120,12 @@ RULES:
    number and formula — never invent or omit facts. Reorganize messy/interleaved two-column
    material back into logical reading order.
 3. Convert obvious "Term — definition" lines into term_definition blocks.
-4. Convert comparison-style content into a table block.
+4. TABLES — use a "table" block whenever the source is tabular: a real grid/table, OR a SET OF ITEMS
+   that each share the SAME fields (e.g. several error-propagation operations each with a Formula and a
+   "when to use"; several concentration units each with a Formula and a description; arteries vs veins
+   vs capillaries). Make the shared fields the column "headers" and one item per row — do NOT flatten
+   such repeated-attribute content into nested lists or term_definition blocks. Keep formulas in cells
+   as LaTeX (rule 7). Example: headers ["Operation","Formula","When to use"], one row per operation.
 5. Convert bulleted/numbered runs into list blocks (preserve nesting).
 6. Bold the testable terms and key phrases (anatomical names, key processes, numeric
    facts) with **double asterisks** in body, definitions, list items and table cells.
@@ -143,12 +148,17 @@ RULES:
       use a concept's "children" for its own sub-points. Do NOT emit a separate term_definition or body
       block per concept in this layout — the concepts are ITEMS inside the topic's ONE card. (Within
       this two-column layout this overrides rule 3.)
+      EXCEPTION (rule 4 wins): if a topic's content is genuinely TABULAR — rows of items that share the
+      same fields — emit a "table" block for that topic instead of a list card. Place a narrow table in
+      a column ("col1"/"col2") like any other card; set a wide multi-column table (and its heading) to
+      "full". Tables are preferred over lists for such content — never flatten a table into list items.
    b. If the topic has a section name, emit it as a "script_heading" placed directly before that topic's
       card.
    c. KEEP EACH WHOLE TOPIC IN ONE COLUMN: set the topic's "script_heading" AND its card to the SAME
       "layout" — "col1" (left) for one topic, "col2" (right) for the next (balance more topics across the
       two columns). NEVER put a topic's heading in one column and its card in the other, and NEVER leave
-      a topic's heading or card "full"/"auto" in this two-column layout.
+      a topic's heading or card "full"/"auto" in this two-column layout — EXCEPT a genuinely wide table
+      topic (rule 4 exception), whose heading AND table may both be "full".
    Use "full" only for the banner or a genuinely wide table; use "auto" only for a single-topic note.
    Default every multi-topic note to this folded two-column layout. Image blocks may also set "width"
    (10–100, percent of the column). Do NOT set theme or pack — the app controls those.
