@@ -107,7 +107,7 @@ def gemini_complete(
     model: str,
     api_key: str,
     images: list[str] | None = None,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
 ) -> str:
     """Run one Google Gemini completion and return the model's raw text (a JSON string).
 
@@ -124,7 +124,11 @@ def gemini_complete(
     payload = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.2},
+        # maxOutputTokens well above the small default so a dense, formula-rich note (LaTeX doubles
+        # every backslash, inflating the JSON) isn't truncated mid-structure (finishReason=MAX_TOKENS).
+        "generationConfig": {
+            "responseMimeType": "application/json", "temperature": 0.2, "maxOutputTokens": 65536,
+        },
     }
     url = _GEMINI_ENDPOINT.format(model=model) + "?key=" + urllib.parse.quote(api_key)
     req = urllib.request.Request(
@@ -243,7 +247,7 @@ def gemini_complete_pooled(
     prompt: str,
     model: str,
     images: list[str] | None = None,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
     fallback_key: str = "",
 ) -> str:
     """Run one Gemini completion, rotating across the key pool and skipping rate-limited keys.

@@ -275,9 +275,15 @@ async def _collect(messages) -> str:
     return text
 
 
+_CLAUDE_TIMEOUT = 300.0  # wall-clock cap for one Claude structuring call (was unbounded)
+
+
 async def _run_text(prompt: str, model: str, system: str = SYSTEM_PROMPT) -> tuple[str, list[str]]:
     stderr: list[str] = []
-    text = await _collect(query(prompt=prompt, options=_options(model, system, stderr.append)))
+    text = await asyncio.wait_for(
+        _collect(query(prompt=prompt, options=_options(model, system, stderr.append))),
+        timeout=_CLAUDE_TIMEOUT,
+    )
     return text, stderr
 
 
@@ -309,6 +315,8 @@ def _gen_text(prompt: str, model: str, settings: Settings, provider: str, system
     except Exception as exc:
         if _CLINotFound is not None and isinstance(exc, _CLINotFound):
             raise RuntimeError(_CLAUDE_MISSING) from None
+        if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+            raise RuntimeError("Claude timed out on this section — retrying.") from None
         raise
 
 
@@ -389,8 +397,13 @@ def _failure(max_retries: int, last_error: str, last_stderr: list[str], provider
 # Big documents are split into chunks so each AI call stays well under the timeout and output cap
 # (one giant call times out and can truncate), and the chunks are structured CONCURRENTLY so a huge
 # file finishes in a reasonable time instead of dozens of serial calls.
-_CHUNK_TARGET = 9000   # aim for ~this many characters per chunk
-_CHUNK_THRESHOLD = 11000  # only split inputs larger than this
+# Kept deliberately SMALL: a dense, formula-heavy chunk expands 2-3x when transcribed into
+# LaTeX-rich JSON (every backslash is doubled), so a big chunk's output can blow past the model's
+# output-token cap (Gemini MAX_TOKENS / Claude truncated JSON) and fail every retry. Smaller chunks
+# keep each call's output well under the cap; _structure_one also bisects any chunk that still overflows.
+_CHUNK_TARGET = 4500   # aim for ~this many characters per chunk
+_CHUNK_THRESHOLD = 6000  # only split inputs larger than this
+_BISECT_FLOOR = 2500   # don't split a chunk below this when recovering from an output overflow
 # Concurrent AI calls per provider: the SHARED free Gemini key has a tight rate limit, so go gentle;
 # Claude (the user's own subscription) and a local Ollama have headroom.
 _PARALLEL = {"gemini": 2, "claude": 6, "ollama": 1}
@@ -421,21 +434,63 @@ def _split_for_structuring(text: str, target: int = _CHUNK_TARGET) -> list[str]:
     return [c for c in out if c.strip()] or [text]
 
 
+def _is_overflow(error: str, text: str) -> bool:
+    """Did the model's OUTPUT exceed its token cap? Gemini reports 'reply was cut off' (MAX_TOKENS);
+    otherwise a truncated reply is LONG, starts like JSON ('{') but has no closing brace. A short
+    non-JSON reply is a plain error, NOT an overflow — so re-prompting (not bisecting) is right there."""
+    e = (error or "").lower()
+    if "cut off" in e or "too long" in e or "max_tokens" in e:
+        return True
+    s = (text or "").strip()
+    return len(s) > 2000 and s.startswith("{") and not s.endswith("}")
+
+
+def _bisect(text: str) -> list[str]:
+    """Split ``text`` into two parts at the paragraph (else line, else sentence) boundary nearest the
+    middle; returns ``[text]`` if it can't be split. Used to recover from an output overflow."""
+    mid = len(text) // 2
+    best: tuple[int, int] | None = None
+    for sep in ("\n\n", "\n", ". "):
+        for pos in (text.rfind(sep, 0, mid), text.find(sep, mid)):
+            if pos > 0 and (best is None or abs(pos - mid) < best[0]):
+                best = (abs(pos - mid), pos + len(sep))
+        if best:
+            break
+    cut = best[1] if best else mid
+    left, right = text[:cut].strip(), text[cut:].strip()
+    return [left, right] if left and right else [text]
+
+
+def _merge_into(note: Note, extra: Note) -> None:
+    """Append ``extra``'s blocks to ``note``, dropping a leading duplicate banner."""
+    blocks = extra.blocks[1:] if extra.blocks and extra.blocks[0].type == "banner" else extra.blocks
+    note.blocks.extend(blocks)
+
+
 def _structure_one(
     raw_text: str, title: str | None, theme: str, pack: str, model: str,
     settings: Settings, max_retries: int,
 ) -> Note:
-    """Structure ONE chunk of text into a Note. Retries on invalid output AND on transient
-    provider errors (e.g. a timeout on slow wifi), within the retry budget."""
+    """Structure ONE chunk of text into a Note. Retries on invalid output and transient provider
+    errors; if the model's output OVERFLOWS its token cap (reply cut off / truncated JSON), bisects
+    the chunk and structures each half instead of resending the same oversized chunk."""
     base_prompt = _build_user_prompt(raw_text, title)
-    last_error, last_stderr = "unknown error", []
+    last_error, last_stderr, last_text = "unknown error", [], ""
     for attempt in range(max_retries + 1):
+        overflow = _is_overflow(last_error, last_text)
         if attempt:
             # A rate-limit needs the per-minute window to clear; ordinary errors just need a moment.
             rate_limited = "limit was hit" in last_error.lower()
             time.sleep(22 if rate_limited else min(2 ** attempt, 8))
+        # An output overflow won't fix itself on retry — split the chunk and structure each half.
+        if attempt and overflow and len(raw_text) > _BISECT_FLOOR:
+            halves = _bisect(raw_text)
+            if len(halves) == 2:
+                note = _structure_one(halves[0], title, theme, pack, model, settings, max_retries)
+                _merge_into(note, _structure_one(halves[1], None, theme, pack, model, settings, max_retries))
+                return note
         prompt = base_prompt
-        if attempt:
+        if attempt and not overflow:  # a cut-off won't be fixed by re-asking, only by a smaller chunk
             prompt += (
                 f"\n\nYour previous response was invalid ({last_error}). "
                 "Return ONLY a corrected single JSON object."
@@ -445,7 +500,8 @@ def _structure_one(
         except RuntimeError as exc:
             if str(exc) == _CLAUDE_MISSING:
                 raise  # not transient — fail fast with the clear message
-            last_error, text = str(exc), ""  # transient (timeout/network) — retry
+            last_error, text = str(exc), ""  # transient (timeout/network/overflow) — retry
+        last_text = text
         if text:
             note, last_error = _note_from_response(text, title, theme, pack)
             if note is not None:

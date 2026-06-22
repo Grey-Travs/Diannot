@@ -34,10 +34,31 @@ def _ensure_chromium() -> None:
 
 
 def _settle(page, html_path: Path) -> None:
-    """Give client-side libraries (Mermaid/KaTeX) time to render before capture."""
+    """Finish client-side rendering (KaTeX math, Mermaid diagrams) DETERMINISTICALLY before capture.
+
+    The page's inline render call can race the print snapshot — with everything inlined,
+    ``networkidle`` fires instantly and a fixed sleep doesn't reliably wait for the math to convert,
+    so it printed as literal ``$…$``. Here we DRIVE the render and WAIT for the result.
+    """
     text = Path(html_path).read_text(encoding="utf-8")
-    if 'class="mermaid"' in text or "katex" in text:
-        page.wait_for_timeout(1500)
+    if "katex" in text:
+        from .render import _KATEX_RENDER_CALL
+
+        try:
+            # Run KaTeX auto-render synchronously (reusing the exact in-page config), then confirm the
+            # DOM actually has rendered math before we snapshot. wait_for_function returns at once
+            # since the evaluate above is synchronous; the timeout is just a safety bound.
+            page.evaluate("() => { if (window.renderMathInElement) { " + _KATEX_RENDER_CALL + " } }")
+            page.wait_for_function(
+                "() => document.querySelectorAll('.katex').length > 0", timeout=10000
+            )
+        except Exception:
+            page.wait_for_timeout(1500)  # never let a render hiccup block the export
+    if 'class="mermaid"' in text:
+        try:
+            page.wait_for_selector(".mermaid svg", timeout=10000)
+        except Exception:
+            page.wait_for_timeout(1500)
 
 
 def html_to_pdf(html_path: Path | str, pdf_path: Path | str) -> Path:
