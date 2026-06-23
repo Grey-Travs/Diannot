@@ -28,6 +28,14 @@ _ENGINES = {
     "ollama": "Local — Ollama (offline)",
 }
 
+# Claude model used for MAKING NOTES (settings.models.structure). Sonnet is the best default: it
+# structures as well as Opus but has far higher usage limits, so big imports don't fail to raw-text walls.
+_CLAUDE_MODELS = {
+    "claude-sonnet-4-6": "Sonnet 4.6 — recommended (fast, high limits)",
+    "claude-opus-4-8": "Opus 4.8 — top quality, tight limits",
+    "claude-haiku-4-5-20251001": "Haiku 4.5 — fastest",
+}
+
 
 @ui.page("/settings")
 def settings_page() -> None:
@@ -80,6 +88,17 @@ def settings_page() -> None:
             study_engine = ui.select(engines, value=study_val,
                                      label="Study (quiz / flashcards) engine").classes("w-80")
 
+            cur_model = settings.models.structure
+            model_opts = dict(_CLAUDE_MODELS)
+            if cur_model not in model_opts:  # keep a custom/legacy model selectable
+                model_opts[cur_model] = cur_model
+            claude_model = ui.select(model_opts, value=cur_model, with_input=True,
+                                     new_value_mode="add-unique",
+                                     label="Claude model (for making notes)").classes("w-96")
+            ui.label("Sonnet is the best default — Opus is top quality but its tight usage limit makes "
+                     "big imports fail and fall back to raw text. Only used when the make-notes engine "
+                     "is Claude.").classes("text-caption text-grey")
+
             with ui.row().classes("items-center gap-3"):
                 budget = ui.number(label="Monthly study budget", value=usage.cap(),
                                    min=1, max=10000).props("dense").classes("w-48")
@@ -118,6 +137,7 @@ def settings_page() -> None:
                     "ollama_host": host.value,
                     "ollama_model": omodel.value,
                 })
+                update_config("models", {"structure": claude_model.value, "summarize": claude_model.value})
                 ui.notify("Saved. New notes and study will use this engine.", type="positive")
 
             ui.button("Save engine", icon="save", on_click=save_engine).props("color=primary no-caps")
@@ -217,11 +237,10 @@ def settings_page() -> None:
             theme = ui.select(themes, value=settings.render.default_theme, label="Default theme").classes("w-60")
             pack = ui.select(packs, value=settings.render.default_pack, label="Default style pack").classes("w-60")
             with ui.expansion("Advanced", icon="tune").classes("w-full"):
-                model = ui.input(label="Claude model", value=settings.models.structure).classes("w-full")
                 out = ui.input(label="Export folder (PDF/PNG)", value=str(settings.paths.output_dir)).classes("w-full")
+                ui.label("The Claude model is set under “AI engine” above.").classes("text-caption text-grey")
 
             def save_defaults() -> None:
-                update_config("models", {"structure": model.value, "summarize": model.value})
                 update_config("render", {"default_pack": pack.value, "default_theme": theme.value})
                 update_config("paths", {"output_dir": out.value})
                 ui.notify("Saved to diannot.toml — restart Studio to apply everywhere.", type="positive")

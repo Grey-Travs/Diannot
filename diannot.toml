@@ -1,6 +1,6 @@
 [models]
-structure = "claude-opus-4-8"
-summarize = "claude-opus-4-8"
+structure = "claude-sonnet-4-6"
+summarize = "claude-sonnet-4-6"
 
 [render]
 default_pack = "study_notes"

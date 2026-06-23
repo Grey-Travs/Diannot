@@ -30,3 +30,10 @@ def test_run_text_converts_process_error_and_surfaces_stderr(monkeypatch):
 def test_claude_concurrency_is_low():
     # Opus rate-limits under many concurrent calls -> keep the structuring fan-out small.
     assert S._PARALLEL["claude"] <= 2
+
+
+def test_default_claude_model_is_sonnet():
+    # Opus's tight usage cap makes big imports fall back to raw-text walls; Sonnet is the high-limit
+    # default for note-making (switchable in Settings).
+    from diannot.config import ModelsCfg
+    assert ModelsCfg().structure == "claude-sonnet-4-6"

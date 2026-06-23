@@ -28,8 +28,10 @@ DEFAULT_PACKS_DIR = PACKAGE_DIR / "assets" / "packs"
 class ModelsCfg(BaseModel):
     """Claude model IDs for each AI step."""
 
-    structure: str = "claude-opus-4-8"
-    summarize: str = "claude-opus-4-8"
+    # Sonnet structures notes as well as Opus but has FAR higher usage limits. Opus's tight cap makes a
+    # big multi-chunk import fail every chunk and fall back to raw-text walls. Switchable in Settings.
+    structure: str = "claude-sonnet-4-6"
+    summarize: str = "claude-sonnet-4-6"
 
 
 class ProvidersCfg(BaseModel):
