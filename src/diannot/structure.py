@@ -115,10 +115,13 @@ RULES:
 1. Begin with one banner block for the chapter title. The source may repeat or garble
    the title (duplicated layout layers, OCR typos); DEDUPE it and fix only obvious typos
    in the TITLE (e.g. "Lymphathic"->"Lymphatic", "Systens"->"Systems").
-2. Be CONCISE — write compact, scannable study notes, not prose. Tighten wording, cut filler
-   and redundancy, and prefer short phrases over full sentences. But keep EVERY key term, fact,
-   number and formula — never invent or omit facts. Reorganize messy/interleaved two-column
-   material back into logical reading order.
+2. Be CONCISE and STRUCTURED — compact, scannable study notes, NEVER prose. CRITICAL: do NOT dump the
+   source as a long paragraph or a WALL of raw text. A "body" block is at most 1–2 short sentences; if
+   there is more to say, break it into a list, a table, term_definition blocks, or a script_heading +
+   list card — never one big body block. Copying a run of source text verbatim into a body block is
+   WRONG: structure it. Tighten wording, cut filler and redundancy, and prefer short phrases over full
+   sentences. But keep EVERY key term, fact, number and formula — never invent or omit facts. Reorganize
+   messy/interleaved two-column material back into logical reading order.
 3. Convert obvious "Term — definition" lines into term_definition blocks.
 4. TABLES — use a "table" block whenever the source is tabular: a real grid/table, OR a SET OF ITEMS
    that each share the SAME fields (e.g. several error-propagation operations each with a Formula and a
@@ -780,15 +783,28 @@ def _merge_into(note: Note, extra: Note) -> None:
     note.blocks.extend(blocks)
 
 
+def _looks_understructured(note: Note, raw_text: str) -> bool:
+    """True if the model DUMPED the chunk as plain body text instead of structuring it (a "wall"):
+    every content block is a body, one of them is long, and together they cover most of the input.
+    A properly structured note uses lists/tables/term_definitions, so this stays false for those."""
+    content = [b for b in note.blocks if b.type not in ("banner", "script_heading")]
+    if not content or not all(b.type == "body" for b in content):
+        return False
+    lengths = [len((getattr(b, "text", "") or "").strip()) for b in content]
+    return max(lengths, default=0) >= 700 and sum(lengths) >= 0.5 * len(raw_text.strip())
+
+
 def _structure_one(
     raw_text: str, title: str | None, theme: str, pack: str, model: str,
     settings: Settings, max_retries: int,
 ) -> Note:
     """Structure ONE chunk of text into a Note. Retries on invalid output and transient provider
     errors; if the model's output OVERFLOWS its token cap (reply cut off / truncated JSON), bisects
-    the chunk and structures each half instead of resending the same oversized chunk."""
+    the chunk and structures each half; and if the model returns an unstructured WALL of body text, it
+    retries ONCE with a forceful "structure it" nudge."""
     base_prompt = _build_user_prompt(raw_text, title)
     last_error, last_stderr, last_text = "unknown error", [], ""
+    nudge_wall, wall_retried = False, False
     for attempt in range(max_retries + 1):
         overflow = _is_overflow(last_error, last_text)
         if attempt:
@@ -803,11 +819,19 @@ def _structure_one(
                 _merge_into(note, _structure_one(halves[1], None, theme, pack, model, settings, max_retries))
                 return note
         prompt = base_prompt
-        if attempt and not overflow:  # a cut-off won't be fixed by re-asking, only by a smaller chunk
+        if nudge_wall:  # the previous reply was a raw-text wall — demand real structure
+            prompt += (
+                "\n\nYour previous response was a WALL of unstructured text (a long body block). That is "
+                "WRONG. Re-structure the SAME content into a script_heading + list card(s), "
+                "term_definition blocks and tables per the rules; a body block must be at most 1–2 short "
+                "sentences. Return ONLY the corrected single JSON object."
+            )
+        elif attempt and not overflow:  # a cut-off won't be fixed by re-asking, only by a smaller chunk
             prompt += (
                 f"\n\nYour previous response was invalid ({last_error}). "
                 "Return ONLY a corrected single JSON object."
             )
+        nudge_wall = False  # consumed
         try:
             text, last_stderr = _gen_text(prompt, model, settings, settings.providers.notes, SYSTEM_PROMPT)
         except RuntimeError as exc:
@@ -818,6 +842,10 @@ def _structure_one(
         if text:
             note, last_error = _note_from_response(text, title, theme, pack)
             if note is not None:
+                # One re-try if the model dumped a wall instead of structuring (the "plain text" bug).
+                if not wall_retried and attempt < max_retries and _looks_understructured(note, raw_text):
+                    wall_retried, nudge_wall, last_error, last_text = True, True, "unstructured wall", ""
+                    continue
                 return note
     raise _failure(max_retries, last_error, last_stderr, settings.providers.notes)
 
