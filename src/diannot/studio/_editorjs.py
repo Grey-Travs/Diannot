@@ -31,6 +31,8 @@ EDITOR_CSS = """
 #editorjs .ce-block__content,#editorjs .ce-toolbar__content{max-width:none;margin:0 38px;}
 #editorjs .codex-editor__redactor{padding-bottom:140px !important;}
 .body--dark #editorjs{box-shadow:0 6px 24px rgba(0,0,0,.35);}
+/* AI flagged this block as unsure (confidence:low) — amber bar; "Fix with AI" is in its ⋮ menu. */
+#editorjs .ce-block.dn-low .ce-block__content{box-shadow:inset 3px 0 0 0 #E0A100;border-radius:4px;}
 </style>
 """
 
@@ -69,6 +71,36 @@ _INIT_TEMPLATE = r"""
     save(){ return { layout:this.layout, meta:this.meta }; }
   }
 
+  // "Fix with AI" — a block tune (appears in every block's ⋮ menu) that re-runs the block's text
+  // through the AI. It only emits the block index; the server opens the styled quick-action dialog.
+  class DnFix {
+    static get isTune(){ return true; }
+    constructor(args){ this.api=args.api; this.block=args.block; this.data=(args&&args.data)||{}; }
+    render(){
+      var api=this.api;
+      // Skip media (image/diagram): re-structuring their "text" would destroy the media. (Banner /
+      // headings map to 'header' here and can't be told apart — the server skips those safely.)
+      var name = this.block && this.block.name;
+      if(name==='image' || name==='diannotRaw'){ return []; }
+      return { icon:'<b style="font-size:12px">&#10024;</b>', title:'Fix with AI…',
+               closeOnActivate:true,
+               onActivate:function(){ var ix=api.blocks.getCurrentBlockIndex();
+                 if(ix>=0){ emitEvent('fix_block_open', {index: ix}); } } };
+    }
+    save(){ return this.data; }
+  }
+
+  // Amber-flag any block the AI was unsure about (meta.confidence==='low'); best-effort, by DOM order.
+  window.dnMarkLow = function(){
+    try{ window._dnEditor.save().then(function(d){
+      var els=document.querySelectorAll('#editorjs .ce-block');
+      (d.blocks||[]).forEach(function(b,i){
+        var m=b.tunes&&b.tunes.dn&&b.tunes.dn.meta;
+        if(els[i]) els[i].classList.toggle('dn-low', !!(m&&m.confidence==='low'));
+      });
+    }); }catch(e){}
+  };
+
   // Read-only passthrough for callout/diagram (editable in Classic mode for now).
   class DnRaw {
     constructor(args){ this.data=(args&&args.data)||{}; }
@@ -101,8 +133,9 @@ _INIT_TEMPLATE = r"""
             {method:'POST',body:fd}).then(function(r){return r.json();}); } } } },
       diannotRaw:{ class:DnRaw },
       dn:{ class:DnTune },
+      dnfix:{ class:DnFix },
     },
-    tunes:['dn'],
+    tunes:['dn','dnfix'],
     onChange:function(){
       if(!window._dnReady) return;
       clearTimeout(window._dnDebounce);
@@ -113,7 +146,7 @@ _INIT_TEMPLATE = r"""
     },
   });
   window._dnEditor = editor;
-  editor.isReady.then(function(){ setTimeout(function(){ window._dnReady=true; }, 250); })
+  editor.isReady.then(function(){ setTimeout(function(){ window._dnReady=true; window.dnMarkLow(); }, 250); })
                .catch(function(e){ console.error('Editor.js init failed', e); });
 })();
 """

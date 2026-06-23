@@ -22,6 +22,12 @@ from ...editor import BLOCK_TYPES, _new_block
 from ...io_utils import atomic_write_text
 from ...models import ListItem, Note
 from ...render import render_note_html
+from ...structure import (
+    FIXABLE_BLOCK_TYPES,
+    FRAGMENT_QUICK_ACTIONS,
+    _block_to_text,
+    restructure_fragment,
+)
 from .._editorjs import EDITOR_CSS, VENDOR_SCRIPTS, editor_init_js
 from ..background import run_blocking
 from ..docedit import editor_to_blocks, note_to_editor
@@ -165,6 +171,62 @@ def note_page(path: str = "", view: str = "") -> None:
         note.blocks.append(_new_block(kind_value))
         rebuild()
 
+    async def fix_block(i: int, hint: str | None) -> None:
+        """Re-run block i's text through the AI and replace it with the corrected block(s)."""
+        if not (0 <= i < len(note.blocks)):
+            return
+        original = note.blocks[i]
+        if original.type not in FIXABLE_BLOCK_TYPES:  # never restructure a banner/heading/media block
+            ui.notify("This block type can't be fixed with AI.", type="warning")
+            return
+        if state.get("fixing"):  # one AI fix at a time, so a second click can't race the replace
+            ui.notify("A fix is already running — one at a time.", type="warning")
+            return
+        src = _block_to_text(original)
+        if not src.strip():
+            ui.notify("Nothing to fix in this block.", type="warning")
+            return
+        ui.notify("Fixing this block with AI…")
+        state["fixing"] = True
+        try:
+            new_blocks = await run_blocking(restructure_fragment, src, hint, settings)
+        except Exception as exc:  # noqa: BLE001 — surfaced to the user
+            ui.notify(f"Fix failed: {exc}", type="negative", multi_line=True)
+            return
+        finally:
+            state["fixing"] = False
+        if original.layout in ("col1", "col2", "full") and new_blocks:
+            new_blocks[0].layout = original.layout  # only the FIRST result keeps the column
+        note.blocks[i:i + 1] = new_blocks  # slice-assign handles 1 -> many
+        rebuild()
+        ui.notify(f"Fixed — replaced with {len(new_blocks)} block(s).", type="positive")
+
+    def _open_fix_dialog(runner) -> None:
+        """The 'Fix with AI' dialog (quick-action buttons + free-text hint). ``runner(hint)`` is the
+        async fix to run (classic block index, or the editor.js index)."""
+        with ui.dialog() as dlg, ui.card().classes("p-4 gap-2").style("min-width:330px"):
+            ui.label("Fix this block with AI").classes("text-subtitle1")
+            ui.label("Pick what it should become, or type your own instruction.").classes("text-caption text-grey")
+
+            async def _run(hint: str | None) -> None:
+                dlg.close()
+                await runner(hint)
+
+            for label, icon, key in (("Make a table", "grid_on", "table"),
+                                     ("Make a list", "format_list_bulleted", "list"),
+                                     ("Split into term + definition", "sticky_note_2", "termdef"),
+                                     ("Fix structure (auto)", "auto_fix_high", "auto")):
+                ui.button(label, icon=icon, on_click=lambda k=key: _run(FRAGMENT_QUICK_ACTIONS[k])) \
+                    .props("flat no-caps align=left").classes("w-full")
+            hint_in = ui.textarea(placeholder='or type, e.g. "make a 3-column table of formula vs use"') \
+                .classes("w-full")
+            with ui.row().classes("justify-end gap-2 w-full"):
+                ui.button("Cancel", on_click=dlg.close).props("flat no-caps")
+                ui.button("Fix", icon="auto_awesome",
+                          on_click=lambda: _run((hint_in.value or "").strip() or None)).props("color=primary no-caps")
+        dlg.on("hide", lambda: dlg.delete())  # remove from the DOM on close (no per-open leak)
+        dlg.open()
+
     def save(notify: bool = True) -> None:
         atomic_write_text(note_path, note.model_dump_json(indent=2, exclude_none=True))
         state["dirty"] = False
@@ -200,6 +262,53 @@ def note_page(path: str = "", view: str = "") -> None:
         refresh()
 
     ui.on("doc_changed", on_doc_changed)
+
+    async def fix_block_ej(idx: int, hint: str | None) -> None:
+        """Document-editor 'Fix with AI': re-structure block ``idx`` and re-render the editor from the
+        corrected note (robust vs the version-dependent blocks.insert API)."""
+        await flush_editor()  # push pending edits into note.blocks before reading the block
+        if not (0 <= idx < len(note.blocks)):
+            ui.notify("Couldn't find that block to fix.", type="warning")
+            return
+        original = note.blocks[idx]
+        if original.type not in FIXABLE_BLOCK_TYPES:  # banner/heading/media can't be restructured
+            ui.notify("This block type can't be fixed with AI.", type="warning")
+            return
+        if state.get("fixing"):
+            ui.notify("A fix is already running — one at a time.", type="warning")
+            return
+        src = _block_to_text(original)
+        if not src.strip():
+            ui.notify("Nothing to fix in this block.", type="warning")
+            return
+        ui.notify("Fixing this block with AI…")
+        state["fixing"] = True
+        try:
+            new_blocks = await run_blocking(restructure_fragment, src, hint, settings)
+        except Exception as exc:  # noqa: BLE001 — surfaced to the user
+            ui.notify(f"Fix failed: {exc}", type="negative", multi_line=True)
+            return
+        finally:
+            state["fixing"] = False
+        if original.layout in ("col1", "col2", "full") and new_blocks:
+            new_blocks[0].layout = original.layout  # only the FIRST result keeps the column
+        note.blocks[idx:idx + 1] = new_blocks
+        payload = json.dumps(note_to_editor(note))
+        await ui.run_javascript(
+            "(function(){var ed=window._dnEditor; if(!ed) return;"
+            f"ed.blocks.render({payload}).then(function(){{window.dnMarkLow&&window.dnMarkLow();}});}})();"
+        )
+        refresh()
+        ui.notify(f"Fixed — replaced with {len(new_blocks)} block(s).", type="positive")
+
+    def on_fix_block_open(e) -> None:
+        idx = int(e.args.get("index", -1)) if isinstance(e.args, dict) else -1
+        if idx < 0:  # no current block (getCurrentBlockIndex == -1) — don't open an inert dialog
+            ui.notify("Couldn't find that block to fix.", type="warning")
+            return
+        _open_fix_dialog(lambda h, idx=idx: fix_block_ej(idx, h))
+
+    ui.on("fix_block_open", on_fix_block_open)
 
     async def flush_editor() -> None:
         """Force any pending (debounced) editor edit through before an explicit save/navigate,
@@ -327,6 +436,11 @@ def note_page(path: str = "", view: str = "") -> None:
                 lbl = ui.label(_snippet(b)).classes("grow cursor-pointer").style(
                     "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
                 )
+                if b.confidence == "low" and b.type in FIXABLE_BLOCK_TYPES:  # one-tap fix on a flagged block
+                    ui.button(icon="auto_fix_high",
+                              on_click=lambda i=i: _open_fix_dialog(lambda h: fix_block(i, h))) \
+                        .props("flat dense round color=warning") \
+                        .tooltip("AI flagged this block as unsure — tap to fix it")
                 tog = ui.toggle({"col1": "L", "col2": "R", "full": "▭", "auto": "A"}, value=b.layout) \
                     .props("dense no-caps unelevated").on_value_change(lambda e, b=b: set_layout(b, e.value))
                 if b.type == "banner":
@@ -339,6 +453,9 @@ def note_page(path: str = "", view: str = "") -> None:
                         ui.menu_item("Make 2-column row", on_click=lambda i=i: make_two_col(i))
                         ui.menu_item("Duplicate", on_click=lambda i=i: duplicate(i))
                         ui.menu_item("Insert below", on_click=lambda i=i: insert_below(i))
+                        if b.type in FIXABLE_BLOCK_TYPES:
+                            ui.menu_item("Fix with AI…",
+                                         on_click=lambda i=i: _open_fix_dialog(lambda h: fix_block(i, h)))
                         ui.separator()
                         ui.menu_item("Delete", on_click=lambda i=i: delete(i))
             body = ui.column().classes("w-full")

@@ -32,11 +32,11 @@ from claude_agent_sdk import (
     TextBlock,
     query,
 )
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from . import providers as _providers
 from .config import Settings
-from .models import BannerBlock, BodyBlock, Note
+from .models import BannerBlock, Block, BodyBlock, Note
 
 try:
     from claude_agent_sdk import CLINotFoundError as _CLINotFound
@@ -178,6 +178,64 @@ RULES:
     No trailing commas.
 """
 
+# Used by "Fix this block with AI": re-structure ONE block of an EXISTING note. Unlike SYSTEM_PROMPT
+# it must NOT emit a banner or force the col1/col2 layout — it returns only corrected content blocks.
+FRAGMENT_SYSTEM_PROMPT = """\
+You are a study-notes structuring engine FIXING ONE block of an existing note. You are given the raw
+text of a single block that came out wrong (a plain-text wall, or content that should be a table/list
+but isn't) plus an instruction for how to fix it. Re-express ONLY that text as one or more correctly
+typed "blocks". Do NOT add a title, banner, whole-note heading or summary, and do NOT invent facts —
+only restructure what is given.
+
+OUTPUT CONTRACT (critical):
+- Respond with a SINGLE JSON object and nothing else. No prose, no code fences.
+- Shape: {"blocks": [ <block>, ... ]}   (NO "title" field, and NO "banner" block.)
+
+BLOCK TYPES (object with a "type" field):
+- {"type":"script_heading","text":"<section title>"}
+- {"type":"subheading","text":"<sub-section>","caps":false}
+- {"type":"body","text":"<paragraph>"}   Bold testable phrases with **double asterisks**.
+- {"type":"term_definition","term":"<Term>","definition":"<short definition>"}
+- {"type":"list","ordered":false,"items":[{"text":"...","children":[...]}]}   Nestable; bold key words.
+- {"type":"table","headers":["..."],"rows":[["...","..."]],"caption":"<optional>"}
+- {"type":"callout","variant":"key_points|tutor_tip|warning","title":"...","body":"...","items":[...]}
+- {"type":"quote","text":"...","attribution":"<optional>"}
+
+RULES:
+1. Follow the user's instruction. "Make this a table" -> emit a table; "make this a list" -> one list.
+2. TABLES — when content is tabular (a grid, OR a set of items that each share the SAME fields, e.g.
+   several operations each with a Formula + a "when to use"), use a "table": shared fields as
+   "headers", one item per row. Do NOT flatten such repeated-attribute content into nested lists.
+3. Convert "Term — definition" pairs into term_definition blocks and bulleted/numbered runs into list
+   blocks (preserve nesting). Be concise; keep EVERY term, fact, number and formula — never invent.
+4. MATH, STATISTICS & CHEMISTRY: reproduce every expression as LaTeX so it renders as real symbols.
+   Inline math in single dollar signs, standalone equations in double dollars: $\\bar{x}$, $\\sigma^2$,
+   $\\frac{a}{b}$, $x^{2}$, $H_2O$. Chemistry with mhchem \\ce{...}: $\\ce{H2SO4}$, $\\ce{2H2 + O2 ->
+   2H2O}$. For a literal percent inside math write \\% (a bare % is a comment that hides the line).
+5. LAYOUT: set every block's "layout" to "auto". Do NOT use "col1"/"col2"/"full", and NEVER emit a
+   "banner" — this is one block inside an existing note. Do NOT set "theme" or "pack".
+6. Output valid JSON only. A backslash in LaTeX must be DOUBLED in JSON: $\\sigma^2$ -> "$\\\\sigma^2$".
+   No trailing commas.
+"""
+
+# Quick-action buttons in the "Fix with AI" dialog -> the instruction sent to the model (a custom
+# free-text hint, if given, is appended). Shared by both editors so the mapping lives in one place.
+FRAGMENT_QUICK_ACTIONS = {
+    "table": "Reformat this content as a TABLE: make the repeated/shared fields the columns (headers) "
+             "and one item per row. Keep any formulas as LaTeX.",
+    "list": "Reformat this content as a single clean LIST block, preserving any nesting.",
+    "termdef": "Split this into term_definition blocks — one bold term and a short definition each.",
+    "auto": "Fix the structure: choose the best block type(s) (table, list, term/definition, body) "
+            "for this content.",
+}
+
+# Only text-bearing CONTENT blocks may be "fixed". Excludes the banner (the poster header — the
+# fragment path strips banners, so fixing one would destroy it), section headings, and media
+# (image/diagram), where re-structuring the text would lose the title or the media.
+FIXABLE_BLOCK_TYPES = frozenset(
+    {"body", "subheading", "term_definition", "list", "table", "callout", "quote"}
+)
+
 
 def _build_user_prompt(raw_text: str, title: str | None) -> str:
     title_hint = (
@@ -245,6 +303,115 @@ def _note_from_response(
         return Note.model_validate(data), ""
     except ValidationError as exc:
         return None, str(exc)[:1500]
+
+
+# --- "Fix this block with AI": re-structure ONE block's text -> corrected blocks ------------------
+_BLOCKS_ADAPTER = TypeAdapter(list[Block])
+
+
+def _block_to_text(block) -> str:
+    """The plain source text of a block (keeping **bold** / $math$) — the AI input when re-fixing it."""
+    t = getattr(block, "type", "")
+    if t in ("script_heading", "subheading", "body", "quote", "banner"):
+        return (getattr(block, "text", "") or "").strip()
+    if t == "term_definition":
+        return f"**{block.term}** — {block.definition}".strip()
+    if t == "list":
+        def _items(items, depth=0):
+            out = []
+            for it in items:
+                out.append("  " * depth + f"- {it.text}")
+                out.extend(_items(it.children, depth + 1))
+            return out
+        return "\n".join(_items(block.items))
+    if t == "table":
+        lines = [block.caption] if getattr(block, "caption", None) else []
+        lines.append(" | ".join(block.headers))
+        lines.extend(" | ".join(r) for r in block.rows)
+        return "\n".join(s for s in lines if s)
+    if t == "callout":
+        return "\n".join(s for s in [block.title or "", block.body or "", *(block.items or [])] if s).strip()
+    if t == "image":
+        return " ".join(s for s in (block.caption, block.alt, block.src) if s).strip()
+    if t == "diagram":
+        return " ".join(s for s in (getattr(block, "caption", None), block.mermaid) if s).strip()
+    return ""
+
+
+def _build_fragment_prompt(text: str, hint: str | None) -> str:
+    instruction = (hint or "").strip() or FRAGMENT_QUICK_ACTIONS["auto"]
+    return (
+        f"Instruction: {instruction}\n\n"
+        'Re-structure the following block text into JSON ({"blocks":[...]} — no title, no banner). '
+        "Output JSON only.\n\n"
+        "<<<BLOCK TEXT>>>\n"
+        f"{text}\n"
+        "<<<END BLOCK TEXT>>>"
+    )
+
+
+def _blocks_from_fragment_response(text: str) -> tuple[list[Block] | None, str]:
+    """Parse a fragment response ``{"blocks":[...]}`` into validated blocks — dropping any banner and
+    coercing col1/col2 layouts to auto so the result blends into the existing note."""
+    if not text:
+        return None, "empty response from model"
+    data = _extract_json(text)
+    if not isinstance(data, dict) or not isinstance(data.get("blocks"), list):
+        return None, "response was not a JSON object with a 'blocks' array"
+    cleaned: list[dict] = []
+    for b in data["blocks"]:
+        if not isinstance(b, dict) or b.get("type") == "banner":  # a fragment never introduces a banner
+            continue
+        b.pop("theme", None)
+        b.pop("pack", None)
+        b["layout"] = "auto"  # a fragment never pins a column or spans width — and this also
+        cleaned.append(b)     # neutralizes TableBlock's default layout="full" when the AI omits it
+    if not cleaned:
+        return None, "no usable blocks in response"
+    try:
+        return list(_BLOCKS_ADAPTER.validate_python(cleaned)), ""
+    except ValidationError as exc:
+        return None, str(exc)[:1200]
+
+
+def restructure_fragment(
+    text: str,
+    hint: str | None = None,
+    settings: Settings | None = None,
+    model: str | None = None,
+    max_retries: int = 2,
+) -> list[Block]:
+    """Re-run ONE block's text through the AI and return corrected blocks (no banner, layout="auto").
+
+    Reuses the configured engine + Gemini key pool via :func:`_gen_text`. ``hint`` is the user's
+    instruction (a quick-action string and/or free text). Raises on persistent failure; re-raises the
+    Claude-missing message immediately so the UI can prompt the user to install / switch engine."""
+    if not (text or "").strip():
+        raise ValueError("Nothing to restructure (the block is empty).")
+    settings = settings or Settings()
+    model = model or settings.models.structure
+    base_prompt = _build_fragment_prompt(text, hint)
+    last_error, last_stderr = "unknown error", []
+    for attempt in range(max_retries + 1):
+        if attempt:
+            time.sleep(min(2 ** attempt, 8))
+        prompt = base_prompt
+        if attempt:
+            prompt += (
+                f"\n\nYour previous response was invalid ({last_error}). "
+                'Return ONLY a corrected JSON object: {"blocks":[...]} with no banner.'
+            )
+        try:
+            out, last_stderr = _gen_text(prompt, model, settings, settings.providers.notes, FRAGMENT_SYSTEM_PROMPT)
+        except RuntimeError as exc:
+            if str(exc) == _CLAUDE_MISSING:
+                raise  # not transient — surface the install/switch hint
+            last_error, out = str(exc), ""
+        if out:
+            blocks, last_error = _blocks_from_fragment_response(out)
+            if blocks is not None:
+                return blocks
+    raise _failure(max_retries, last_error, last_stderr, settings.providers.notes)
 
 
 def _options(model: str, system: str, stderr_sink) -> ClaudeAgentOptions:

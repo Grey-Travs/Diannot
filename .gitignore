@@ -40,3 +40,6 @@ dist/installer/
 
 # Personal source notes (large binaries kept out of history; store under a notebook later)
 /*.pdf
+
+# Local import artifacts created when testing the studio against the sample notebook
+examples/sample_notebook/_imports/
