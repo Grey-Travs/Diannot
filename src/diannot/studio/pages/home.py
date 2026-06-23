@@ -8,6 +8,7 @@ quizzes, terms) are computed from the workspace's note + deck sidecar files.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from pathlib import Path
 from urllib.parse import quote
 
@@ -16,7 +17,7 @@ from nicegui import app, ui
 from ...cards import load_deck
 from ...config import Settings
 from ...io_utils import atomic_write_text
-from ...models import BannerBlock, BodyBlock, Note, ScriptHeadingBlock
+from ...models import BannerBlock, BodyBlock, Box, Note, ScriptHeadingBlock
 from ...render import load_theme
 from ...srs import due_cards
 from .. import updater
@@ -125,19 +126,33 @@ def _confirm_delete(path: str, title: str) -> None:
     dialog.open()
 
 
-def _new_note(workspace: Path) -> None:
-    note = Note(
-        title="Untitled Note",
-        blocks=[
-            BannerBlock(text="Untitled Note"),
-            ScriptHeadingBlock(text="Section title"),
-            BodyBlock(text="Write your **notes** here. Bold the **testable** terms."),
-        ],
-    )
-    dest = Path(workspace) / "untitled.note.json"
+def _new_note(workspace: Path, canvas: bool = False) -> None:
+    if canvas:
+        # A blank free-positioning note, seeded with a couple of placed boxes to drag.
+        note = Note(
+            title="Untitled Canvas",
+            layout_mode="canvas",
+            blocks=[
+                BannerBlock(text="Untitled Canvas", id=uuid.uuid4().hex, box=Box(x=5, y=4, w=90, h=12, z=1)),
+                BodyBlock(text="Drag me anywhere · double-click to edit · use “Add text/image” above.",
+                          id=uuid.uuid4().hex, box=Box(x=8, y=22, w=46, h=16, z=2)),
+            ],
+        )
+        stem = "untitled-canvas"
+    else:
+        note = Note(
+            title="Untitled Note",
+            blocks=[
+                BannerBlock(text="Untitled Note"),
+                ScriptHeadingBlock(text="Section title"),
+                BodyBlock(text="Write your **notes** here. Bold the **testable** terms."),
+            ],
+        )
+        stem = "untitled"
+    dest = Path(workspace) / f"{stem}.note.json"
     n = 1
     while dest.exists():
-        dest = Path(workspace) / f"untitled-{n}.note.json"
+        dest = Path(workspace) / f"{stem}-{n}.note.json"
         n += 1
     atomic_write_text(dest, note.model_dump_json(indent=2, exclude_none=True))
     ui.navigate.to(f"/note?path={quote(str(dest))}")
@@ -270,6 +285,9 @@ def home_page() -> None:
                     + ("" if total_due else " text-color=primary"))
                 ui.button("New note", icon="note_add",
                           on_click=lambda: workspace and _new_note(workspace)).props("outline no-caps color=white")
+                ui.button("Canvas note", icon="dashboard_customize",
+                          on_click=lambda: workspace and _new_note(workspace, canvas=True)) \
+                    .props("outline no-caps color=white").tooltip("A free-positioning page — drag text & images anywhere")
 
         # ---- stat chips ----
         with ui.element("div").classes("dn-stats"):

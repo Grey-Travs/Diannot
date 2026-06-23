@@ -189,7 +189,9 @@ only restructure what is given.
 
 OUTPUT CONTRACT (critical):
 - Respond with a SINGLE JSON object and nothing else. No prose, no code fences.
-- Shape: {"blocks": [ <block>, ... ]}   (NO "title" field, and NO "banner" block.)
+- First CHECK the given text and state a one-sentence "diagnosis" of what is structurally wrong (e.g.
+  "raw-text wall that should be 3 list items"); if it is already well-formed, say "Looks fine — minor tidy".
+- Shape: {"diagnosis":"<one sentence>", "blocks": [ <block>, ... ]}   (NO "title" field, and NO "banner" block.)
 
 BLOCK TYPES (object with a "type" field):
 - {"type":"script_heading","text":"<section title>"}
@@ -338,26 +340,87 @@ def _block_to_text(block) -> str:
     return ""
 
 
-def _build_fragment_prompt(text: str, hint: str | None) -> str:
+# --- "Looks broken?" — an INSTANT, local, no-AI heuristic for flagging genuinely-malformed blocks. --
+# Calibrated for PRECISION (must NOT flag well-formed notes): every signal is an unambiguous structural
+# defect. It deliberately ignores block.confidence — the liberal ingestion "low" is what caused the
+# false-positive amber flags the user complained about, so the UI no longer keys off it.
+# MATH/greek/chemistry commands only — NOT generic LaTeX like \section / \emph / \textbf, so prose that
+# merely mentions a typesetting/regex command won't be mistaken for leaked math (precision over recall).
+_MATH_CMD_RE = re.compile(
+    r"\\(?:frac|dfrac|tfrac|sqrt|sum|prod|int|iint|oint|lim|infty|partial|nabla|cdot|times|div|"
+    r"pm|mp|leq|geq|neq|approx|equiv|propto|binom|overline|underline|vec|hat|bar|dot|ddot|"
+    r"alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|"
+    r"rho|sigma|tau|upsilon|phi|varphi|chi|psi|omega|"
+    r"Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|ce|pu)\b"
+)
+_UNESCAPED_DOLLAR_RE = re.compile(r"(?<!\\)\$")
+
+
+def _broken_math(text: str) -> bool:
+    """Math left as plain text: 2+ MATH commands OUTSIDE any $…$ span, or a string with real math syntax
+    and an odd number of UNESCAPED '$' (unbalanced). Currency ("$5", "\\$50") and prose mentioning
+    non-math LaTeX commands never trip — precision over recall."""
+    t = text or ""
+    outside = re.sub(r"\$[^$\n]*\$", "", t)  # drop balanced inline-math spans first
+    if len(_MATH_CMD_RE.findall(outside)) >= 2:
+        return True
+    has_math = bool(_MATH_CMD_RE.search(t) or re.search(r"[_^]\{", t))
+    return has_math and len(_UNESCAPED_DOLLAR_RE.findall(t)) % 2 == 1
+
+
+def looks_broken(block) -> str | None:
+    """A short human reason if ``block`` looks GENUINELY malformed, else None (local, instant, no AI)."""
+    t = getattr(block, "type", "")
+    if t == "body":
+        text = (getattr(block, "text", "") or "").strip()
+        if len(text) >= 600 and text.count("**") < 2:
+            return "Long unstructured paragraph — may be a failed-import text dump."
+        if _broken_math(text):
+            return "Math looks unrendered — LaTeX left as plain text."
+    elif t == "list":
+        items = getattr(block, "items", []) or []
+        if len(items) >= 3 and sum(1 for it in items[:8] if " | " in (it.text or "")) >= 3:
+            return "List rows contain “|” columns — likely a table that got flattened."
+    elif t == "table":
+        headers = getattr(block, "headers", []) or []
+        rows = getattr(block, "rows", []) or []
+        if not headers or any(len(r) != len(headers) for r in rows):
+            return "Malformed table — ragged rows or missing headers."
+    elif t in ("term_definition", "callout"):
+        if _broken_math(_block_to_text(block)):
+            return "Math looks unrendered — LaTeX left as plain text."
+    return None
+
+
+def heuristic_flags(note) -> dict[int, str]:
+    """Map block-index -> reason for every block the instant local check finds malformed."""
+    return {i: r for i, b in enumerate(note.blocks) if (r := looks_broken(b))}
+
+
+def _build_fragment_prompt(text: str, hint: str | None, reason: str | None = None) -> str:
     instruction = (hint or "").strip() or FRAGMENT_QUICK_ACTIONS["auto"]
+    reason_line = f"A quick check flagged this block: {reason.strip()}\n" if (reason or "").strip() else ""
     return (
-        f"Instruction: {instruction}\n\n"
-        'Re-structure the following block text into JSON ({"blocks":[...]} — no title, no banner). '
-        "Output JSON only.\n\n"
+        f"Instruction: {instruction}\n"
+        f"{reason_line}"
+        'First CHECK the text and give a one-sentence "diagnosis", then re-structure it into JSON '
+        '({"diagnosis":"...","blocks":[...]} — no title, no banner). Output JSON only.\n\n'
         "<<<BLOCK TEXT>>>\n"
         f"{text}\n"
         "<<<END BLOCK TEXT>>>"
     )
 
 
-def _blocks_from_fragment_response(text: str) -> tuple[list[Block] | None, str]:
-    """Parse a fragment response ``{"blocks":[...]}`` into validated blocks — dropping any banner and
-    coercing col1/col2 layouts to auto so the result blends into the existing note."""
+def _blocks_from_fragment_response(text: str) -> tuple[list[Block] | None, str, str]:
+    """Parse a fragment response ``{"diagnosis":..., "blocks":[...]}`` into ``(blocks, diagnosis, error)``
+    — dropping any banner and coercing col1/col2 layouts to auto so the result blends into the note.
+    ``diagnosis`` is the model's one-line "what was wrong" (``""`` if the model omitted it: back-compat)."""
     if not text:
-        return None, "empty response from model"
+        return None, "", "empty response from model"
     data = _extract_json(text)
     if not isinstance(data, dict) or not isinstance(data.get("blocks"), list):
-        return None, "response was not a JSON object with a 'blocks' array"
+        return None, "", "response was not a JSON object with a 'blocks' array"
+    diagnosis = str(data.get("diagnosis") or "").strip()[:200]
     cleaned: list[dict] = []
     for b in data["blocks"]:
         if not isinstance(b, dict) or b.get("type") == "banner":  # a fragment never introduces a banner
@@ -367,11 +430,11 @@ def _blocks_from_fragment_response(text: str) -> tuple[list[Block] | None, str]:
         b["layout"] = "auto"  # a fragment never pins a column or spans width — and this also
         cleaned.append(b)     # neutralizes TableBlock's default layout="full" when the AI omits it
     if not cleaned:
-        return None, "no usable blocks in response"
+        return None, diagnosis, "no usable blocks in response"
     try:
-        return list(_BLOCKS_ADAPTER.validate_python(cleaned)), ""
+        return list(_BLOCKS_ADAPTER.validate_python(cleaned)), diagnosis, ""
     except ValidationError as exc:
-        return None, str(exc)[:1200]
+        return None, diagnosis, str(exc)[:1200]
 
 
 def restructure_fragment(
@@ -380,17 +443,20 @@ def restructure_fragment(
     settings: Settings | None = None,
     model: str | None = None,
     max_retries: int = 2,
-) -> list[Block]:
-    """Re-run ONE block's text through the AI and return corrected blocks (no banner, layout="auto").
+    reason: str | None = None,
+) -> tuple[list[Block], str]:
+    """Re-run ONE block's text through the AI: CHECK it, then return ``(corrected blocks, diagnosis)``
+    (no banner, layout="auto").
 
     Reuses the configured engine + Gemini key pool via :func:`_gen_text`. ``hint`` is the user's
-    instruction (a quick-action string and/or free text). Raises on persistent failure; re-raises the
-    Claude-missing message immediately so the UI can prompt the user to install / switch engine."""
+    instruction (a quick-action string and/or free text); ``reason`` is the local "looks broken" hint
+    (if any), passed to the model so it checks against the same concern. Raises on persistent failure;
+    re-raises the Claude-missing message immediately so the UI can prompt to install / switch engine."""
     if not (text or "").strip():
         raise ValueError("Nothing to restructure (the block is empty).")
     settings = settings or Settings()
     model = model or settings.models.structure
-    base_prompt = _build_fragment_prompt(text, hint)
+    base_prompt = _build_fragment_prompt(text, hint, reason)
     last_error, last_stderr = "unknown error", []
     for attempt in range(max_retries + 1):
         if attempt:
@@ -399,7 +465,7 @@ def restructure_fragment(
         if attempt:
             prompt += (
                 f"\n\nYour previous response was invalid ({last_error}). "
-                'Return ONLY a corrected JSON object: {"blocks":[...]} with no banner.'
+                'Return ONLY a corrected JSON object: {"diagnosis":"...","blocks":[...]} with no banner.'
             )
         try:
             out, last_stderr = _gen_text(prompt, model, settings, settings.providers.notes, FRAGMENT_SYSTEM_PROMPT)
@@ -408,10 +474,75 @@ def restructure_fragment(
                 raise  # not transient — surface the install/switch hint
             last_error, out = str(exc), ""
         if out:
-            blocks, last_error = _blocks_from_fragment_response(out)
+            blocks, diagnosis, last_error = _blocks_from_fragment_response(out)
             if blocks is not None:
-                return blocks
+                return blocks, diagnosis
     raise _failure(max_retries, last_error, last_stderr, settings.providers.notes)
+
+
+# --- "Check note with AI": one call that judges EVERY content block, refining the instant heuristic --
+SCAN_SYSTEM_PROMPT = """\
+You are a QUALITY CHECKER for study-note blocks. You receive a JSON array of blocks, each with an
+integer "i" (its index), a "type", and its "text". For EACH block decide if it is STRUCTURALLY BROKEN
+— the text is in the wrong block type or left as an unstructured dump: a wall of raw text that should
+be a list/table, a list whose rows are really table columns, LaTeX/math left as plain text, or a
+ragged/garbled table. Do NOT flag a block merely for being short, terse, informal, or for wording you
+would phrase differently — only TRUE structural breakage.
+
+Respond with a SINGLE JSON object and nothing else (no prose, no code fences):
+{"broken": [ {"i": <index>, "reason": "<8 words or fewer>"} ]}
+Omit every block that is fine. If nothing is broken, return {"broken": []}.
+"""
+
+# Content blocks worth sending to the scan (FIXABLE_BLOCK_TYPES minus subheading — a short title is
+# never "broken" in a way a fix could help).
+_SCANNABLE_TYPES = frozenset({"body", "term_definition", "list", "table", "callout", "quote"})
+
+
+def scan_note_blocks(
+    note,
+    settings: Settings | None = None,
+    model: str | None = None,
+    max_retries: int = 1,
+) -> dict[int, str]:
+    """Ask the AI, in ONE call, which of the note's content blocks are genuinely malformed. Returns
+    ``{block_index: reason}``. Advisory: never raises for bad model output (returns what it can, or
+    ``{}``); re-raises only the Claude-missing hint so the UI can prompt to install / switch engine."""
+    settings = settings or Settings()
+    model = model or settings.models.structure
+    payload = [
+        {"i": i, "type": b.type, "text": _block_to_text(b)[:600]}
+        for i, b in enumerate(note.blocks)
+        if b.type in _SCANNABLE_TYPES
+    ]
+    if not payload:
+        return {}
+    prompt = ("Blocks:\n" + json.dumps(payload, ensure_ascii=False)
+              + "\nReturn the broken ones as described.")
+    n = len(note.blocks)
+    for attempt in range(max_retries + 1):
+        if attempt:
+            time.sleep(min(2 ** attempt, 8))
+        try:
+            out, _ = _gen_text(prompt, model, settings, settings.providers.notes, SCAN_SYSTEM_PROMPT)
+        except RuntimeError as exc:
+            if str(exc) == _CLAUDE_MISSING:
+                raise
+            continue
+        data = _extract_json(out) if out else None
+        if isinstance(data, dict) and isinstance(data.get("broken"), list):
+            flags: dict[int, str] = {}
+            for item in data["broken"]:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    idx = int(item["i"])
+                except (TypeError, ValueError, KeyError):
+                    continue
+                if 0 <= idx < n:
+                    flags[idx] = str(item.get("reason") or "Looks malformed").strip()[:80]
+            return flags
+    return {}
 
 
 def _options(model: str, system: str, stderr_sink) -> ClaudeAgentOptions:

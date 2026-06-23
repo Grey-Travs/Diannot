@@ -20,16 +20,20 @@ from nicegui import app, ui
 from ...config import PACKAGE_DIR, Settings
 from ...editor import BLOCK_TYPES, _new_block
 from ...io_utils import atomic_write_text
-from ...models import ListItem, Note
+from ...models import BodyBlock, ImageBlock, ListItem, Note
 from ...render import render_note_html
 from ...structure import (
     FIXABLE_BLOCK_TYPES,
     FRAGMENT_QUICK_ACTIONS,
     _block_to_text,
+    heuristic_flags,
     restructure_fragment,
+    scan_note_blocks,
 )
+from .._canvasjs import CANVAS_CSS, canvas_init_js
 from .._editorjs import EDITOR_CSS, VENDOR_SCRIPTS, editor_init_js
 from ..background import run_blocking
+from ..canvasedit import apply_box, find_index, note_to_canvas
 from ..docedit import editor_to_blocks, note_to_editor
 from ..layout import studio_layout
 from ..previews import LIVE, LIVE_ASSETS
@@ -98,15 +102,26 @@ def note_page(path: str = "", view: str = "") -> None:
     LIVE[token] = note
     assets_dir = note_path.parent / f"{note_path.stem}.assets"
     LIVE_ASSETS[token] = assets_dir
-    state = {"v": 0, "dirty": False, "ready": False}
+    # 'flags': {block index -> "looks broken" reason} driving the amber flag + the Fix hint. Seeded
+    # from the instant local heuristic (NOT block.confidence — that liberal ingestion 'low' caused the
+    # false flags); refined by the on-demand "Check with AI" scan. Never persisted -> exports stay clean.
+    state = {"v": 0, "dirty": False, "ready": False, "fixing": False, "scanning": False,
+             "flags": heuristic_flags(note)}
     bodies: list = []  # the (hidden) edit forms, for collapse/expand all
     themes = sorted(p.stem for p in settings.paths.themes_dir.glob("*.toml"))
     packs = sorted(p.name for p in settings.paths.packs_dir.iterdir() if p.is_dir())
     # Mode is per-tab via the URL (?view=), falling back to the app-wide default; so toggling in
     # one note's tab never changes another open note's editor.
-    mode = view if view in ("document", "classic") else app.storage.general.get("editor_mode", "document")
+    # A canvas note is always edited on the canvas surface (the document/classic editors ignore — and
+    # would drop — block positions). Flow notes use the per-tab document/classic mode.
+    if note.layout_mode == "canvas":
+        mode = "canvas"
+    else:
+        mode = view if view in ("document", "classic") else app.storage.general.get("editor_mode", "document")
 
-    if mode == "classic":
+    if mode == "canvas":
+        ui.add_head_html(CANVAS_CSS)
+    elif mode == "classic":
         ui.add_head_html('<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>')
     else:
         ui.add_head_html(EDITOR_CSS)
@@ -127,7 +142,15 @@ def note_page(path: str = "", view: str = "") -> None:
             state["dirty"] = True
             _update_status()
 
-    def rebuild() -> None:
+    def rebuild(keep_flags: bool = False) -> None:
+        # Refresh the instant local flags after any structural change, UNLESS the caller just set
+        # authoritative AI-scan flags (scan_note passes keep_flags=True).
+        if not keep_flags:
+            state["flags"] = heuristic_flags(note)
+        if mode == "canvas":  # no block list in canvas mode — re-seed the surface instead
+            _reseed_canvas()
+            refresh()
+            return
         bodies.clear()
         block_col.clear()
         with block_col:
@@ -171,35 +194,83 @@ def note_page(path: str = "", view: str = "") -> None:
         note.blocks.append(_new_block(kind_value))
         rebuild()
 
+    def _progress_dialog(title: str, stages: list[str]):
+        """A small persistent modal: indeterminate bar + a cycling stage label + elapsed seconds.
+        Returns ``finish()`` — call it to stop the timer and close (works on success or error).
+        The AI call is opaque, so the stages are time-driven (cosmetic), but they make the wait legible."""
+        clock = {"t": 0.0}
+        with ui.dialog().props("persistent") as dlg, ui.card().classes("p-4 gap-2").style("min-width:300px"):
+            ui.label(title).classes("text-subtitle1")
+            ui.linear_progress(show_value=False).props("indeterminate rounded").classes("w-full")
+            stage_lbl = ui.label(stages[0] if stages else "Working…").classes("text-grey")
+            elapsed_lbl = ui.label("0s").classes("text-caption text-grey")
+
+        def _tick() -> None:
+            clock["t"] += 0.3
+            elapsed_lbl.text = f"{int(clock['t'])}s"
+            if stages:
+                stage_lbl.text = stages[min(int(clock["t"] // 1.4), len(stages) - 1)]
+
+        timer = ui.timer(0.3, _tick)
+
+        def finish() -> None:
+            try:  # cleanup must never raise out of a finally block
+                timer.deactivate()
+                dlg.close()
+                dlg.delete()
+            except Exception:  # noqa: BLE001
+                pass
+
+        dlg.open()
+        return finish
+
+    def _notify_fixed(diagnosis: str, n_blocks: int) -> None:
+        """Report the fix result, distinguishing 'was already fine' from a real repair."""
+        if diagnosis and "fine" in diagnosis.lower():
+            ui.notify(diagnosis, type="info", multi_line=True)  # nothing was actually broken
+        elif diagnosis:
+            ui.notify(f"Fixed: {diagnosis}", type="positive", multi_line=True)
+        else:
+            ui.notify(f"Fixed — replaced with {n_blocks} block(s).", type="positive", multi_line=True)
+
     async def fix_block(i: int, hint: str | None) -> None:
-        """Re-run block i's text through the AI and replace it with the corrected block(s)."""
+        """CHECK block i's text with the AI, then replace it with the corrected block(s)."""
         if not (0 <= i < len(note.blocks)):
             return
         original = note.blocks[i]
         if original.type not in FIXABLE_BLOCK_TYPES:  # never restructure a banner/heading/media block
             ui.notify("This block type can't be fixed with AI.", type="warning")
             return
-        if state.get("fixing"):  # one AI fix at a time, so a second click can't race the replace
-            ui.notify("A fix is already running — one at a time.", type="warning")
+        if state.get("fixing") or state.get("scanning"):  # one AI task at a time
+            ui.notify("An AI task is already running — one at a time.", type="warning")
             return
         src = _block_to_text(original)
         if not src.strip():
             ui.notify("Nothing to fix in this block.", type="warning")
             return
-        ui.notify("Fixing this block with AI…")
         state["fixing"] = True
+        finish = _progress_dialog("Fixing block with AI",
+                                  ["Reading the block…", "Checking what's wrong…", "Rewriting…"])
         try:
-            new_blocks = await run_blocking(restructure_fragment, src, hint, settings)
+            new_blocks, diagnosis = await run_blocking(
+                restructure_fragment, src, hint, settings, reason=state["flags"].get(i))
         except Exception as exc:  # noqa: BLE001 — surfaced to the user
             ui.notify(f"Fix failed: {exc}", type="negative", multi_line=True)
             return
         finally:
             state["fixing"] = False
+            finish()
+        # Re-resolve the block by IDENTITY — the note may have changed during the AI call (a deleted/
+        # reordered block, or a document-mode rebuild), so the original index can be stale.
+        i = next((j for j, b in enumerate(note.blocks) if b is original), -1)
+        if i < 0:
+            ui.notify("That block changed during the fix — nothing was replaced. Try again.", type="warning")
+            return
         if original.layout in ("col1", "col2", "full") and new_blocks:
             new_blocks[0].layout = original.layout  # only the FIRST result keeps the column
         note.blocks[i:i + 1] = new_blocks  # slice-assign handles 1 -> many
-        rebuild()
-        ui.notify(f"Fixed — replaced with {len(new_blocks)} block(s).", type="positive")
+        rebuild()  # recomputes the heuristic flags (the fixed block's flag clears if it's now clean)
+        _notify_fixed(diagnosis, len(new_blocks))
 
     def _open_fix_dialog(runner) -> None:
         """The 'Fix with AI' dialog (quick-action buttons + free-text hint). ``runner(hint)`` is the
@@ -259,6 +330,7 @@ def note_page(path: str = "", view: str = "") -> None:
         if not new_blocks and note.blocks:
             return  # refuse to wipe a non-empty note on an empty/garbled payload
         note.blocks = new_blocks
+        state["flags"] = heuristic_flags(note)  # keep flags current for the next Fix/Scan after edits
         refresh()
 
     ui.on("doc_changed", on_doc_changed)
@@ -274,32 +346,42 @@ def note_page(path: str = "", view: str = "") -> None:
         if original.type not in FIXABLE_BLOCK_TYPES:  # banner/heading/media can't be restructured
             ui.notify("This block type can't be fixed with AI.", type="warning")
             return
-        if state.get("fixing"):
-            ui.notify("A fix is already running — one at a time.", type="warning")
+        if state.get("fixing") or state.get("scanning"):
+            ui.notify("An AI task is already running — one at a time.", type="warning")
             return
         src = _block_to_text(original)
         if not src.strip():
             ui.notify("Nothing to fix in this block.", type="warning")
             return
-        ui.notify("Fixing this block with AI…")
         state["fixing"] = True
+        finish = _progress_dialog("Fixing block with AI",
+                                  ["Reading the block…", "Checking what's wrong…", "Rewriting…"])
         try:
-            new_blocks = await run_blocking(restructure_fragment, src, hint, settings)
+            new_blocks, diagnosis = await run_blocking(
+                restructure_fragment, src, hint, settings, reason=state["flags"].get(idx))
         except Exception as exc:  # noqa: BLE001 — surfaced to the user
             ui.notify(f"Fix failed: {exc}", type="negative", multi_line=True)
             return
         finally:
             state["fixing"] = False
+            finish()
+        # Re-resolve by IDENTITY — an in-flight doc_changed during the AI call may have rebuilt
+        # note.blocks, so idx can be stale; never clobber the wrong block.
+        idx = next((j for j, b in enumerate(note.blocks) if b is original), -1)
+        if idx < 0:
+            ui.notify("That block changed during the fix — nothing was replaced. Try again.", type="warning")
+            return
         if original.layout in ("col1", "col2", "full") and new_blocks:
             new_blocks[0].layout = original.layout  # only the FIRST result keeps the column
         note.blocks[idx:idx + 1] = new_blocks
+        state["flags"] = heuristic_flags(note)  # recompute after the replace
         payload = json.dumps(note_to_editor(note))
         await ui.run_javascript(
             "(function(){var ed=window._dnEditor; if(!ed) return;"
-            f"ed.blocks.render({payload}).then(function(){{window.dnMarkLow&&window.dnMarkLow();}});}})();"
+            f"ed.blocks.render({payload}).then(function(){{window.dnApplyFlags&&window.dnApplyFlags({json.dumps(state['flags'])});}});}})();"
         )
         refresh()
-        ui.notify(f"Fixed — replaced with {len(new_blocks)} block(s).", type="positive")
+        _notify_fixed(diagnosis, len(new_blocks))
 
     def on_fix_block_open(e) -> None:
         idx = int(e.args.get("index", -1)) if isinstance(e.args, dict) else -1
@@ -309,6 +391,88 @@ def note_page(path: str = "", view: str = "") -> None:
         _open_fix_dialog(lambda h, idx=idx: fix_block_ej(idx, h))
 
     ui.on("fix_block_open", on_fix_block_open)
+
+    async def scan_note() -> None:
+        """'Check with AI': one AI pass that judges every content block and refines the flags."""
+        if state.get("fixing") or state.get("scanning"):
+            ui.notify("An AI task is already running — one at a time.", type="warning")
+            return
+        await flush_editor()  # make sure note.blocks reflects the latest document-editor edits
+        n0 = len(note.blocks)
+        state["scanning"] = True
+        finish = _progress_dialog("Checking note with AI",
+                                  ["Reading the blocks…", "Judging each one…", "Collecting flags…"])
+        try:
+            flags = await run_blocking(scan_note_blocks, note, settings)
+        except Exception as exc:  # noqa: BLE001 — surfaced to the user
+            ui.notify(f"Check failed: {exc}", type="negative", multi_line=True)
+            return
+        finally:
+            state["scanning"] = False
+            finish()
+        if len(note.blocks) != n0:  # note edited mid-scan — AI indices are stale; recover safely
+            flags = heuristic_flags(note)
+        state["flags"] = flags  # the AI scan is authoritative (adds subtle ones + clears false positives)
+        if mode == "document":
+            await ui.run_javascript(f"window.dnApplyFlags && window.dnApplyFlags({json.dumps(flags)});")
+        else:
+            rebuild(keep_flags=True)
+        ui.notify(f"Checked {sum(1 for b in note.blocks if b.type in FIXABLE_BLOCK_TYPES)} block(s) — "
+                  f"flagged {len(flags)}." + ("" if flags else "  All look good! ✓"),
+                  type="positive", multi_line=True)
+
+    # ---- canvas (free-positioning) editor ----
+    def _reseed_canvas() -> None:
+        payload = json.dumps(note_to_canvas(note))
+        ui.run_javascript(f"window.dnCanvasRender && window.dnCanvasRender({payload});")
+
+    def _ev_id(e) -> str | None:
+        return e.args.get("id") if isinstance(e.args, dict) else None
+
+    def on_canvas_changed(e) -> None:
+        a = e.args if isinstance(e.args, dict) else {}
+        if apply_box(note, a.get("id"), a.get("x", 0), a.get("y", 0),
+                     a.get("w", 30), a.get("h", 12), a.get("z", 0)):
+            refresh()  # preview reflects the new position; autosave persists it
+
+    def on_canvas_delete(e) -> None:
+        i = find_index(note, _ev_id(e))
+        if i >= 0:
+            del note.blocks[i]
+            _reseed_canvas()
+            refresh()
+
+    def on_canvas_edit(e) -> None:
+        i = find_index(note, _ev_id(e))
+        if i < 0:
+            return
+        b = note.blocks[i]
+        with ui.dialog() as dlg, ui.card().classes("p-4 gap-2").style("min-width:360px;max-width:480px"):
+            ui.label(f"Edit {b.type.replace('_', ' ')}").classes("text-subtitle1")
+            _fields(b)  # reuse the classic field editor (binds to the block + refreshes the preview)
+            with ui.row().classes("justify-end w-full"):
+                ui.button("Done", on_click=dlg.close).props("color=primary no-caps")
+        dlg.on("hide", lambda: (_reseed_canvas(), dlg.delete()))  # the box label may have changed
+        dlg.open()
+
+    def add_text_box() -> None:
+        note.blocks.append(BodyBlock(text="New text", id=uuid.uuid4().hex))
+        _reseed_canvas()
+        refresh()
+
+    async def add_image_box(e) -> None:
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        dest = assets_dir / e.file.name
+        dest.write_bytes(await e.file.read())
+        note.blocks.append(ImageBlock(src=f"/file?path={quote(str(dest.resolve()))}",
+                                      caption=e.file.name, id=uuid.uuid4().hex))
+        _reseed_canvas()
+        refresh()
+        ui.notify(f"Added image {e.file.name}", type="positive")
+
+    ui.on("canvas_changed", on_canvas_changed)
+    ui.on("canvas_delete", on_canvas_delete)
+    ui.on("canvas_edit", on_canvas_edit)
 
     async def flush_editor() -> None:
         """Force any pending (debounced) editor edit through before an explicit save/navigate,
@@ -436,11 +600,11 @@ def note_page(path: str = "", view: str = "") -> None:
                 lbl = ui.label(_snippet(b)).classes("grow cursor-pointer").style(
                     "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
                 )
-                if b.confidence == "low" and b.type in FIXABLE_BLOCK_TYPES:  # one-tap fix on a flagged block
+                if i in state["flags"] and b.type in FIXABLE_BLOCK_TYPES:  # one-tap fix on a flagged block
                     ui.button(icon="auto_fix_high",
                               on_click=lambda i=i: _open_fix_dialog(lambda h: fix_block(i, h))) \
                         .props("flat dense round color=warning") \
-                        .tooltip("AI flagged this block as unsure — tap to fix it")
+                        .tooltip(state["flags"].get(i) or "This block looks broken — tap to fix it")
                 tog = ui.toggle({"col1": "L", "col2": "R", "full": "▭", "auto": "A"}, value=b.layout) \
                     .props("dense no-caps unelevated").on_value_change(lambda e, b=b: set_layout(b, e.value))
                 if b.type == "banner":
@@ -493,17 +657,46 @@ def note_page(path: str = "", view: str = "") -> None:
         await flush_editor()
         save()
 
+    def _convert_to_canvas() -> None:
+        with ui.dialog() as dlg, ui.card().classes("p-4 gap-2"):
+            ui.label("Convert to a canvas note?").classes("text-subtitle1")
+            ui.label("Your blocks become boxes you can drag and resize anywhere on the page. "
+                     "They stay fully editable and keep their styled look.") \
+                .classes("text-caption text-grey").style("max-width:340px")
+
+            async def _do() -> None:
+                dlg.close()
+                await flush_editor()
+                note.layout_mode = "canvas"
+                note_to_canvas(note)  # assign ids + default boxes, then reopen in canvas mode
+                save(notify=False)
+                ui.navigate.to(f"/note?path={quote(str(note_path))}")
+
+            with ui.row().classes("justify-end gap-2 w-full"):
+                ui.button("Cancel", on_click=dlg.close).props("flat no-caps")
+                ui.button("Convert", icon="dashboard_customize", on_click=_do).props("color=primary no-caps")
+        dlg.open()
+
     # ---- toolbar ----
     with ui.row().classes("items-center gap-2 w-full p-2"):
         ui.button(icon="arrow_back", on_click=_go_back).props("flat round dense")
         ui.label(note_path.name).classes("text-subtitle1")
         save_label = ui.label("All changes saved").classes("text-caption").style("color:#9b96a8")
         ui.space()
-        ui.toggle({"document": "Document", "classic": "Classic"}, value=mode) \
-            .props("dense no-caps unelevated").on_value_change(lambda e: _switch_mode(e.value)) \
-            .tooltip("Document = type freely · Classic = block-by-block rows")
+        if mode == "canvas":
+            ui.badge("Canvas").props("color=deep-purple").classes("text-caption") \
+                .tooltip("Free-positioning note — drag boxes anywhere on the page")
+        else:
+            ui.toggle({"document": "Document", "classic": "Classic"}, value=mode) \
+                .props("dense no-caps unelevated").on_value_change(lambda e: _switch_mode(e.value)) \
+                .tooltip("Document = type freely · Classic = block-by-block rows")
+            ui.button(icon="dashboard_customize", on_click=_convert_to_canvas) \
+                .props("flat dense round").tooltip("Convert to a free-positioning canvas note")
         ui.select(themes, label="Theme").bind_value(note, "theme").on_value_change(refresh).props("dense outlined")
         ui.select(packs, label="Pack").bind_value(note, "pack").on_value_change(refresh).props("dense outlined")
+        if mode != "canvas":
+            ui.button("Check with AI", icon="fact_check", on_click=scan_note).props("outline no-caps") \
+                .tooltip("Ask the AI to find blocks that look broken")
         ui.button("Save", icon="save", on_click=_save_click).props("color=positive no-caps")
         ui.button("PDF", icon="picture_as_pdf", on_click=lambda: export("pdf")).props("outline no-caps")
         ui.button("PNG", icon="image", on_click=lambda: export("png")).props("outline no-caps")
@@ -512,7 +705,15 @@ def note_page(path: str = "", view: str = "") -> None:
     # ---- editor + preview ----
     with ui.row().classes("w-full no-wrap gap-4 px-2"):
         with ui.column().classes("w-1/2"):
-            if mode == "classic":
+            if mode == "canvas":
+                with ui.row().classes("items-center gap-2 w-full"):
+                    ui.button("Add text", icon="text_fields", on_click=add_text_box).props("no-caps dense")
+                    ui.upload(on_upload=add_image_box, auto_upload=True) \
+                        .props('accept=image/* label="Add image"').classes("max-w-xs")
+                ui.label("Drag a box to move · drag the corner dot to resize · double-click to edit · "
+                         "× to delete. The styled page is on the right.").classes("text-caption text-grey px-1")
+                ui.html('<div id="dncanvas-wrap"><div id="dncanvas"></div></div>').classes("w-full")
+            elif mode == "classic":
                 with ui.row().classes("items-center gap-2 w-full"):
                     kind = ui.select(BLOCK_TYPES, value="body", label="Add block").props("dense outlined")
                     ui.button("Add", icon="add", on_click=lambda: add(kind.value)).props("no-caps")
@@ -535,14 +736,20 @@ def note_page(path: str = "", view: str = "") -> None:
             )
             preview_frame._props["src"] = f"/preview/live?token={token}&v=0"
 
-    if mode == "classic":
+    if mode == "canvas":
+        state["ready"] = True
+        _seed = json.dumps(note_to_canvas(note))  # assigns ids + default boxes for any unplaced block
+        ui.timer(0.4, lambda: ui.run_javascript(canvas_init_js(_seed, token)), once=True)
+    elif mode == "classic":
         rebuild()  # initial render while ready is False, so it won't flag "unsaved"
         state["ready"] = True
         ui.timer(0.3, lambda: ui.run_javascript(_SORTABLE_INIT), once=True)
     else:
         state["ready"] = True
         _seed = json.dumps(note_to_editor(note))
-        ui.timer(0.4, lambda: ui.run_javascript(editor_init_js(_seed, token)), once=True)
+        # Bake the instant heuristic flags into init so they paint reliably when the editor is ready.
+        ui.timer(0.4, lambda: ui.run_javascript(
+            editor_init_js(_seed, token, json.dumps(state["flags"]))), once=True)
     ui.timer(1.5, _autosave)  # crash-safe autosave shortly after any edit
 
     # Ctrl+S saves (and stop the browser's own save dialog in web mode).

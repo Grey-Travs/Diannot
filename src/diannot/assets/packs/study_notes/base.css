@@ -176,3 +176,12 @@ blockquote.quote {
   color: #444;
 }
 blockquote.quote cite { display: block; font-style: normal; font-size: 9.5px; color: #888; margin-top: 3px; }
+
+/* ---- Canvas mode: free positioning on a fixed A4 page (Note.layout_mode == "canvas") ---- */
+/* The page is a real A4 (210x297mm); page.pdf() exports it 1:1 with zero margins. Each block is an
+   absolutely-placed box (% of the page); min-height (not height) lets text grow rather than clip. */
+.canvas-page { position: relative; width: 210mm; height: 297mm; margin: 0 auto;
+  background: var(--c-page); overflow: hidden; }
+.canvas-item { position: absolute; box-sizing: border-box; }
+.canvas-item > * { margin-top: 0; margin-bottom: 0; }
+@media screen { .canvas-page { box-shadow: 0 8px 28px rgba(0, 0, 0, .15); border-radius: 4px; } }

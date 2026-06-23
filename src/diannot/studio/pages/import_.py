@@ -1,13 +1,10 @@
-"""Import wizard — make notes from a file (text/PDF/Office/image/scan).
+"""Import wizard — make notes from ONE OR MANY files (text/PDF/Office/image/scan).
 
-Upload → plain-language auto-detect → Simple options (+ Advanced expander) →
-build the note as an APP-SCOPED background task (so it survives leaving the page)
-→ open the new note.
+Upload one or several files → plain-language auto-detect → shared options → build each as its own note
+in an APP-SCOPED background batch (survives leaving the page) → open the note (single) or a results list.
 
-The build (reading the file + asking the AI to structure it) can take a while, so it
-runs via ``background_tasks.create`` and records progress in a module-level registry
-keyed by workspace. Leaving the wizard and coming back re-attaches to the running (or
-finished) job instead of silently cancelling it.
+Files are processed SEQUENTIALLY (gentle on the shared free Gemini key), and one bad file is collected
+and skipped — it never aborts the rest of the batch.
 """
 from __future__ import annotations
 
@@ -33,8 +30,8 @@ _MODE_MSG = {
 }
 
 # App-scoped state, keyed by workspace path, so it survives leaving/returning to /import.
-_PENDING: dict[str, dict] = {}  # an uploaded file awaiting "Make my notes"
-_JOBS: dict[str, dict] = {}     # the running / finished build job
+_PENDING: dict[str, list[dict]] = {}  # uploaded files awaiting "Make my notes"
+_JOBS: dict[str, dict] = {}           # the running / finished batch job
 
 
 def _unique_note_path(workspace: str, title: str) -> Path:
@@ -47,27 +44,36 @@ def _unique_note_path(workspace: str, title: str) -> Path:
     return dest
 
 
-async def _run_import(workspace: str, job: dict, path: Path, params: dict, settings: Settings) -> None:
-    """Read + structure the file and save the note. Runs detached from any client."""
-    try:
-        job["step"] = f"Reading your file and structuring it with {settings.providers.notes}…"
+async def _run_import_batch(workspace: str, job: dict, files: list[dict], params: dict,
+                            settings: Settings) -> None:
+    """Structure each file into its own note, sequentially. Per-file errors are collected, not fatal."""
+    for i, f in enumerate(files):
+        fe = job["files"][i]
+        fe["status"] = "running"
+        job["current"] = i
 
-        def _progress(done: int, total: int) -> None:
-            job["step"] = (f"Structuring part {done} of {total} with {settings.providers.notes}… "
-                           "(large file — this is split into smaller pieces)"
-                           if total > 1 else f"Structuring your notes with {settings.providers.notes}…")
+        def _progress(done: int, total: int, fe=fe) -> None:
+            fe["step"] = f"part {done} of {total}" if total > 1 else "structuring"
 
-        note = await run_blocking(ingest_file, path, settings=settings, on_progress=_progress, **params)
-        job["step"] = "Saving your notes…"
-        dest = _unique_note_path(workspace, params.get("title") or note.title)
-        atomic_write_text(dest, note.model_dump_json(indent=2, exclude_none=True))
-        job["note_path"] = str(dest)
-        job["status"] = "done"
-        job["step"] = "Notes ready!"
-    except Exception as exc:  # noqa: BLE001 - surfaced to the user
-        job["status"] = "error"
-        job["error"] = str(exc)
-        job["step"] = "Failed"
+        try:
+            title = params.get("title") or Path(f["name"]).stem.replace("_", " ").title()
+            file_params = {k: v for k, v in params.items() if k != "title"}
+            note = await run_blocking(ingest_file, Path(f["path"]), settings=settings,
+                                      on_progress=_progress, title=title, **file_params)
+            dest = _unique_note_path(workspace, title)
+            atomic_write_text(dest, note.model_dump_json(indent=2, exclude_none=True))
+            fe["status"], fe["note_path"] = "done", str(dest)
+            job["created"].append({"name": dest.name, "path": str(dest)})
+        except Exception as exc:  # noqa: BLE001 — collected + shown; one bad file won't abort the batch
+            fe["status"], fe["error"] = "error", str(exc)
+            job["failed"].append({"name": f["name"], "error": str(exc)})
+        finally:
+            job["done"] += 1
+            try:
+                Path(f["path"]).unlink(missing_ok=True)  # remove the temp upload
+            except OSError:
+                pass
+    job["status"] = "done"
 
 
 @ui.page("/import")
@@ -84,20 +90,25 @@ def import_page() -> None:
     packs = sorted(p.name for p in settings.paths.packs_dir.iterdir() if p.is_dir())
 
     with ui.column().classes("w-full p-4 gap-3 max-w-2xl"):
-        ui.label("Make notes from a file").classes("text-h5")
-        ui.label("Drop a PDF, slide deck, document, photo, or scan — the AI turns it into "
-                 "styled notes.").classes("text-grey")
+        ui.label("Make notes from files").classes("text-h5")
+        ui.label("Drop one or many PDFs, slide decks, documents, photos, or scans — the AI turns each "
+                 "into its own styled note.").classes("text-grey")
 
         async def on_upload(e) -> None:
             imports = Path(ws) / "_imports"
             imports.mkdir(parents=True, exist_ok=True)
+            base, ext = Path(e.file.name).stem, Path(e.file.name).suffix
             dest = imports / e.file.name
+            n = 1
+            while dest.exists():  # don't clobber a same-named file already in the batch
+                dest = imports / f"{base}_{n}{ext}"
+                n += 1
             dest.write_bytes(await e.file.read())
-            _PENDING[ws] = {"path": str(dest), "name": e.file.name}
-            _JOBS.pop(ws, None)  # a new file starts a fresh flow
+            _PENDING.setdefault(ws, []).append({"path": str(dest), "name": e.file.name})
+            _JOBS.pop(ws, None)  # a new upload starts a fresh flow
             render()
 
-        ui.upload(on_upload=on_upload, auto_upload=True).props(
+        ui.upload(on_upload=on_upload, auto_upload=True, multiple=True).props(
             f'accept="{",".join(sorted(SUPPORTED_SUFFIXES))}"'
         ).classes("w-full")
 
@@ -112,27 +123,41 @@ def import_page() -> None:
             elif _PENDING.get(ws):
                 _render_options(_PENDING[ws])
 
-    def _render_options(pending: dict) -> None:
-        path = Path(pending["path"])
-        mode = decide_mode(path.suffix, None, False, path, None)
+    def _render_options(pending: list[dict]) -> None:
         ui.separator()
-        ui.label(f"File: {pending['name']}").classes("text-subtitle1")
-        ui.label(_MODE_MSG.get(mode, "")).classes("text-grey")
+        n = len(pending)
+        if n == 1:
+            path = Path(pending[0]["path"])
+            ui.label(f"File: {pending[0]['name']}").classes("text-subtitle1")
+            ui.label(_MODE_MSG.get(decide_mode(path.suffix, None, False, path, None), "")).classes("text-grey")
+        else:
+            ui.label(f"{n} files ready").classes("text-subtitle1")
+            with ui.column().classes("gap-0"):
+                for f in pending[:10]:
+                    ui.label(f"• {f['name']}").classes("text-caption text-grey")
+                if n > 10:
+                    ui.label(f"…and {n - 10} more").classes("text-caption text-grey")
+
         # Large files become many AI calls; the shared free Gemini key has a tight limit.
-        big = path.stat().st_size > 200_000
+        big = any(Path(f["path"]).stat().st_size > 200_000 for f in pending)
         if big and settings.providers.notes == "gemini" and credentials.EMBEDDED_KEY_ACTIVE:
-            ui.label("Heads up: this is a large file, so it's split into many AI calls. The shared free "
-                     "Gemini key may hit its limit partway through (those parts come in as raw text). For "
-                     "a big file, add your own free Gemini key in Settings, or switch the engine to "
-                     "Claude — both have far more headroom.").classes("text-caption text-warning")
-        title = ui.input(label="Note title",
-                         value=Path(pending["name"]).stem.replace("_", " ").title()).classes("w-full")
-        theme = ui.select(themes, value=settings.render.default_theme, label="Theme").classes("w-60")
+            ui.label("Heads up: large files are split into many AI calls and the shared free Gemini key "
+                     "may hit its limit (those parts come in as raw text). For big files/batches, add your "
+                     "own free Gemini key in Settings, or switch the engine to Claude.").classes("text-caption text-warning")
+
+        title = None
+        if n == 1:
+            title = ui.input(label="Note title",
+                             value=Path(pending[0]["name"]).stem.replace("_", " ").title()).classes("w-full")
+        else:
+            ui.label("Each note's title is taken from its file name.").classes("text-caption text-grey")
+        theme = ui.select(themes, value=settings.render.default_theme,
+                          label="Theme" + (" (all)" if n > 1 else "")).classes("w-60")
 
         with ui.expansion("Advanced options", icon="tune").classes("w-full"):
             model = ui.input(label="Model (blank = default)")
             pack = ui.select(packs, value=settings.render.default_pack, label="Style pack")
-            pages = ui.input(label="Pages, e.g. 1-3,5 (PDFs)")
+            pages = ui.input(label="Pages, e.g. 1-3,5 (PDFs; applies to all)")
             dpi = ui.number(label="Scan quality (DPI)", value=200, min=72, max=400)
             vision = ui.select(["auto", "force on", "force off"], value="auto", label="AI vision")
             tess = ui.switch("Use offline OCR (Tesseract)")
@@ -141,7 +166,6 @@ def import_page() -> None:
             vmap = {"auto": None, "force on": True, "force off": False}
             params = dict(
                 pages=(pages.value or None),
-                title=(title.value or None),
                 theme=theme.value,
                 pack=pack.value,
                 model=(model.value or None),
@@ -149,48 +173,68 @@ def import_page() -> None:
                 tesseract=tess.value,
                 dpi=int(dpi.value or 200),
             )
-            job = {"name": pending["name"], "status": "running", "step": "Starting…",
-                   "note_path": None, "error": None, "t0": time.monotonic()}
+            if title is not None and (title.value or "").strip():
+                params["title"] = title.value.strip()  # single-file title override
+            job = {
+                "status": "running",
+                "files": [{"name": f["name"], "status": "pending", "step": "", "error": None,
+                           "note_path": None} for f in pending],
+                "total": len(pending), "done": 0, "current": 0,
+                "created": [], "failed": [], "t0": time.monotonic(),
+            }
             _JOBS[ws] = job
+            files = list(pending)
             _PENDING.pop(ws, None)
-            background_tasks.create(_run_import(ws, job, path, params, settings), name=f"import-{id(job)}")
+            background_tasks.create(_run_import_batch(ws, job, files, params, settings),
+                                    name=f"import-{id(job)}")
             render()
 
-        ui.button("Make my notes", icon="auto_awesome", on_click=make).props("color=primary no-caps")
+        ui.button(("Make my note" if n == 1 else f"Make {n} notes"), icon="auto_awesome",
+                  on_click=make).props("color=primary no-caps")
+
+    def _open(path: str) -> None:
+        ui.navigate.to(f"/note?path={quote(path)}")
 
     def _render_job(job: dict) -> None:
         ui.separator()
-        if job["status"] == "running":
-            ui.label(f"Building “{job['name']}”").classes("text-subtitle1")
-            ui.linear_progress(value=1.0, show_value=False).props("indeterminate rounded").classes("w-full")
-            step = ui.label(job["step"]).classes("text-grey")
-            ui.label("You can leave this page — it keeps building in the background.").classes("text-caption text-grey")
+        total = job["total"]
+        if job["status"] != "done":
+            ui.label(f"Making {total} note{'s' if total != 1 else ''}…").classes("text-subtitle1")
+            bar = ui.linear_progress(value=0, show_value=False).props(
+                ("indeterminate " if total == 1 else "") + "rounded").classes("w-full")
+            cur = ui.label("").classes("text-grey")
+            ui.label("You can leave this page — it keeps going in the background.").classes("text-caption text-grey")
 
             def tick() -> None:
-                if job["status"] == "running":
-                    step.text = f"{job['step']}  ({int(time.monotonic() - job['t0'])}s)"
-                elif job["status"] == "done" and job["note_path"]:
+                if job["status"] != "done":
+                    d = job["done"]
+                    if total:
+                        bar.value = d / total
+                    fe = job["files"][min(job["current"], total - 1)] if total else None
+                    if fe:
+                        cur.text = (f"File {min(job['current'] + 1, total)} of {total}: {fe['name']} — "
+                                    f"{fe['step'] or 'starting'}  ({int(time.monotonic() - job['t0'])}s)")
+                else:
                     timer.deactivate()
-                    ui.navigate.to(f"/note?path={quote(job['note_path'])}")
-                else:  # error
-                    timer.deactivate()
-                    render()
+                    if total == 1 and len(job["created"]) == 1:  # single file -> open it (old UX)
+                        _open(job["created"][0]["path"])
+                    else:
+                        render()
 
             timer = ui.timer(0.5, tick)
-        elif job["status"] == "done" and job["note_path"]:
+        else:  # done
+            created, failed = job["created"], job["failed"]
             with ui.row().classes("items-center gap-2"):
-                ui.icon("check_circle", color="positive")
-                ui.label("Notes ready!").classes("text-subtitle1")
-            ui.button("Open note", icon="auto_awesome",
-                      on_click=lambda: ui.navigate.to(f"/note?path={quote(job['note_path'])}")).props("color=primary no-caps")
-            ui.button("Make another", icon="add",
+                ui.icon("check_circle" if created else "error",
+                        color="positive" if created else "negative")
+                ui.label(f"{len(created)} note{'s' if len(created) != 1 else ''} created"
+                         + (f", {len(failed)} failed" if failed else "")).classes("text-subtitle1")
+            for c in created:
+                ui.button(c["name"], icon="auto_awesome",
+                          on_click=lambda p=c["path"]: _open(p)).props("flat no-caps")
+            for fl in failed:
+                ui.label(f"✗ {fl['name']}: {fl['error']}").classes("text-caption text-negative")
+            ui.button("Import more", icon="add",
                       on_click=lambda: (_JOBS.pop(ws, None), render())).props("flat no-caps")
-        else:  # error
-            with ui.row().classes("items-center gap-2"):
-                ui.icon("error", color="negative")
-                ui.label("Couldn't make notes").classes("text-subtitle1")
-            ui.label(job.get("error") or "Unknown error").classes("text-caption text-negative")
-            ui.button("Try again", icon="refresh",
-                      on_click=lambda: (_JOBS.pop(ws, None), render())).props("no-caps")
 
     render()

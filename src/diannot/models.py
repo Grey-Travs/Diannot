@@ -6,6 +6,7 @@ validates. Every block carries a ``layout`` override for the two-column flow.
 """
 from __future__ import annotations
 
+import uuid
 from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
@@ -16,6 +17,21 @@ from pydantic import BaseModel, Field
 Layout = Literal["auto", "full", "col1", "col2"]
 
 
+class Box(BaseModel):
+    """Absolute position on a fixed canvas page, as percentages (0–100) of the page width/height.
+
+    Used only by canvas-mode notes (:attr:`Note.layout_mode` == ``"canvas"``); ``None`` for flow
+    notes, which the standard two-column renderer keeps untouched. The editor clamps values to the
+    page and the renderer clips overflow, so no upper bounds are enforced here.
+    """
+
+    x: float = 0.0
+    y: float = 0.0
+    w: float = 30.0
+    h: float = 12.0
+    z: int = 0
+
+
 class _Block(BaseModel):
     """Fields shared by every block."""
 
@@ -23,6 +39,10 @@ class _Block(BaseModel):
     # Provenance + confidence (set during ingestion; optional for hand-authored notes).
     source_page: Optional[int] = None
     confidence: Optional[Literal["high", "medium", "low"]] = None
+    # Canvas mode only: a stable id (so a position can be attached to this block) + its absolute
+    # box. Both are None for flow notes and ignored by the two-column renderer.
+    id: Optional[str] = None
+    box: Optional[Box] = None
 
 
 class BannerBlock(_Block):
@@ -153,9 +173,20 @@ class Note(BaseModel):
     pack: str = "study_notes"
     subject: Optional[str] = None
     source: Optional[str] = None  # source file this note was ingested from
+    # "flow" = the signature auto-styled two-column note (default). "canvas" = free positioning,
+    # where each block carries an absolute :class:`Box`. Old notes lack this field -> "flow".
+    layout_mode: Literal["flow", "canvas"] = "flow"
     blocks: list[Block] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
+
+
+def ensure_ids(note: "Note") -> "Note":
+    """Give every block a stable id (canvas positions are keyed by id). Mutates + returns the note."""
+    for b in note.blocks:
+        if not b.id:
+            b.id = uuid.uuid4().hex
+    return note
 
 
 ListItem.model_rebuild()

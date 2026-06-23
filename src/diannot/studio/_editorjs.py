@@ -13,6 +13,8 @@ into ``note.blocks`` via ``docedit.editor_to_blocks`` and reuses the existing pr
 """
 from __future__ import annotations
 
+import re
+
 # Vendored under assets/vendor/editorjs/, served at /dnvendor/editorjs/. Core first, then tools.
 VENDOR_SCRIPTS = [
     "editorjs.umd.js",
@@ -90,16 +92,20 @@ _INIT_TEMPLATE = r"""
     save(){ return this.data; }
   }
 
-  // Amber-flag any block the AI was unsure about (meta.confidence==='low'); best-effort, by DOM order.
-  window.dnMarkLow = function(){
-    try{ window._dnEditor.save().then(function(d){
+  // Paint "looks broken" flags pushed from Python — a {blockIndex: reason} map -> amber bar + tooltip,
+  // by DOM order (best-effort). Replaces the old confidence-driven auto-flag, which over-flagged.
+  window.dnApplyFlags = function(map){
+    try{
+      map = map || {};
       var els=document.querySelectorAll('#editorjs .ce-block');
-      (d.blocks||[]).forEach(function(b,i){
-        var m=b.tunes&&b.tunes.dn&&b.tunes.dn.meta;
-        if(els[i]) els[i].classList.toggle('dn-low', !!(m&&m.confidence==='low'));
+      els.forEach(function(el,i){
+        var reason = map[i];
+        el.classList.toggle('dn-low', !!reason);
+        if(reason){ el.setAttribute('title', reason); } else { el.removeAttribute('title'); }
       });
-    }); }catch(e){}
+    }catch(e){}
   };
+  window.dnMarkLow = function(){ window.dnApplyFlags({}); };  // legacy shim (clears) for any old caller
 
   // Read-only passthrough for callout/diagram (editable in Classic mode for now).
   class DnRaw {
@@ -146,16 +152,19 @@ _INIT_TEMPLATE = r"""
     },
   });
   window._dnEditor = editor;
-  editor.isReady.then(function(){ setTimeout(function(){ window._dnReady=true; window.dnMarkLow(); }, 250); })
+  editor.isReady.then(function(){ setTimeout(function(){ window._dnReady=true;
+                 window.dnApplyFlags(__FLAGS__); }, 250); })
                .catch(function(e){ console.error('Editor.js init failed', e); });
 })();
 """
 
 
-def editor_init_js(seed_json: str, token: str) -> str:
-    """Build the one-shot init script for a note: seed data + upload token baked in.
+def editor_init_js(seed_json: str, token: str, flags_json: str = "{}") -> str:
+    """Build the one-shot init script for a note: seed data + upload token + initial flags baked in.
 
-    Replace the token (a plain hex id) BEFORE the seed, so note content that happens to contain
-    the literal ``__TOKEN__`` can't be clobbered.
+    Substituted in a SINGLE pass so inserted content can't clobber another placeholder (e.g. note text
+    that happens to contain the literal ``__SEED__``/``__FLAGS__``). ``flags_json`` is a
+    ``{blockIndex: reason}`` map painted as amber "looks broken" bars once the editor is ready.
     """
-    return _INIT_TEMPLATE.replace("__TOKEN__", token).replace("__SEED__", seed_json)
+    subs = {"__TOKEN__": token, "__FLAGS__": flags_json, "__SEED__": seed_json}
+    return re.sub(r"__TOKEN__|__FLAGS__|__SEED__", lambda m: subs[m.group(0)], _INIT_TEMPLATE)

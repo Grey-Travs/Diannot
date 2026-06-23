@@ -39,15 +39,16 @@ def _mock_gen(monkeypatch, *responses):
 
 def test_fragment_returns_blocks_no_banner(monkeypatch):
     _mock_gen(monkeypatch, TABLE_JSON)
-    blocks = S.restructure_fragment("several ops each with a formula", hint="make a table")
+    blocks, diagnosis = S.restructure_fragment("several ops each with a formula", hint="make a table")
     assert len(blocks) == 1 and blocks[0].type == "table"
     assert all(b.type != "banner" for b in blocks)
+    assert isinstance(diagnosis, str)
 
 
 def test_fragment_drops_banner_and_coerces_layout(monkeypatch):
     _mock_gen(monkeypatch,
               '{"blocks":[{"type":"banner","text":"X"},{"type":"body","text":"hi","layout":"col1"}]}')
-    blocks = S.restructure_fragment("text")
+    blocks, _ = S.restructure_fragment("text")
     assert [b.type for b in blocks] == ["body"]   # banner stripped
     assert blocks[0].layout == "auto"             # col1 coerced
 
@@ -56,8 +57,17 @@ def test_fragment_bare_table_coerces_to_auto(monkeypatch):
     """A table with NO explicit layout must not keep TableBlock's default 'full' (which would break
     out of its column / span both columns). The headline 'Make a table' path."""
     _mock_gen(monkeypatch, '{"blocks":[{"type":"table","headers":["A"],"rows":[["1"]]}]}')
-    blocks = S.restructure_fragment("x", hint="make a table")
+    blocks, _ = S.restructure_fragment("x", hint="make a table")
     assert blocks[0].type == "table" and blocks[0].layout == "auto"
+
+
+def test_fragment_parses_diagnosis_and_reason_hint(monkeypatch):
+    """The fix now CHECKS then fixes: it parses a 'diagnosis' and threads the local reason into the prompt."""
+    calls = _mock_gen(monkeypatch,
+                      '{"diagnosis":"raw-text wall that should be a list","blocks":[{"type":"body","text":"hi"}]}')
+    blocks, diagnosis = S.restructure_fragment("x", reason="Long unstructured paragraph")
+    assert blocks[0].type == "body" and diagnosis == "raw-text wall that should be a list"
+    assert "Long unstructured paragraph" in calls[0]   # the heuristic reason is sent to the model
 
 
 def test_fixable_block_types_excludes_banner_and_media():
@@ -68,7 +78,7 @@ def test_fixable_block_types_excludes_banner_and_media():
 
 def test_fragment_recovers_on_second_attempt(monkeypatch):
     calls = _mock_gen(monkeypatch, "not json", TABLE_JSON)
-    blocks = S.restructure_fragment("text", max_retries=2)
+    blocks, _ = S.restructure_fragment("text", max_retries=2)
     assert blocks[0].type == "table" and len(calls) == 2
 
 

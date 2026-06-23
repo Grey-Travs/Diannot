@@ -194,3 +194,10 @@ blockquote.quote {
   color: var(--muted);
 }
 blockquote.quote cite { display: block; font-style: normal; font-size: 9.5px; color: var(--muted); margin-top: 3px; }
+
+/* ---- Canvas mode: free positioning on a fixed A4 page (Note.layout_mode == "canvas") ---- */
+.canvas-page { position: relative; width: 210mm; height: 297mm; margin: 0 auto;
+  background: var(--navy); overflow: hidden; }
+.canvas-item { position: absolute; box-sizing: border-box; }
+.canvas-item > * { margin-top: 0; margin-bottom: 0; }
+@media screen { .canvas-page { box-shadow: 0 10px 40px rgba(0, 0, 0, .5); border-radius: 6px; } }
