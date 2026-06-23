@@ -7,7 +7,21 @@ round-trips through ``note.blocks[i].box`` (a :class:`~diannot.models.Box`, perc
 """
 from __future__ import annotations
 
+import math
+
 from ..models import Box, Note, ensure_ids
+
+
+def _clamp(v, lo: float, hi: float, default: float) -> float:
+    """A finite float in [lo, hi], or ``default`` for junk/Infinity/NaN (a hostile client can't push
+    bad geometry into the saved note)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(f):
+        return default
+    return max(lo, min(hi, f))
 
 
 def _label(b) -> str:
@@ -71,5 +85,10 @@ def apply_box(note: Note, block_id: str | None, x, y, w, h, z) -> bool:
     i = find_index(note, block_id)
     if i < 0:
         return False
-    note.blocks[i].box = Box(x=float(x), y=float(y), w=float(w), h=float(h), z=int(z))
+    try:
+        zi = int(z)
+    except (TypeError, ValueError):
+        zi = 0
+    note.blocks[i].box = Box(x=_clamp(x, 0, 100, 0.0), y=_clamp(y, 0, 100, 0.0),
+                             w=_clamp(w, 1, 100, 30.0), h=_clamp(h, 1, 100, 12.0), z=zi)
     return True

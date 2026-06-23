@@ -373,7 +373,9 @@ def looks_broken(block) -> str | None:
     t = getattr(block, "type", "")
     if t == "body":
         text = (getattr(block, "text", "") or "").strip()
-        if len(text) >= 600 and text.count("**") < 2:
+        # Only a VERY long, structure-free body is a likely failed-import dump. 1000+ chars with no bold
+        # is far beyond a normal note paragraph; lower thresholds wrongly flagged legitimate prose.
+        if len(text) >= 1000 and text.count("**") < 2:
             return "Long unstructured paragraph — may be a failed-import text dump."
         if _broken_math(text):
             return "Math looks unrendered — LaTeX left as plain text."
@@ -486,8 +488,11 @@ You are a QUALITY CHECKER for study-note blocks. You receive a JSON array of blo
 integer "i" (its index), a "type", and its "text". For EACH block decide if it is STRUCTURALLY BROKEN
 — the text is in the wrong block type or left as an unstructured dump: a wall of raw text that should
 be a list/table, a list whose rows are really table columns, LaTeX/math left as plain text, or a
-ragged/garbled table. Do NOT flag a block merely for being short, terse, informal, or for wording you
-would phrase differently — only TRUE structural breakage.
+ragged/garbled table.
+
+BE CONSERVATIVE. The DEFAULT is that a block is FINE — most blocks are. Flag a block ONLY when you are
+confident it is genuinely structurally broken. Do NOT flag a block for being short, terse, informal,
+plain, or merely for wording you would phrase differently. When in doubt, do NOT flag it.
 
 Respond with a SINGLE JSON object and nothing else (no prose, no code fences):
 {"broken": [ {"i": <index>, "reason": "<8 words or fewer>"} ]}

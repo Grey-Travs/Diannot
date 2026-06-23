@@ -97,14 +97,15 @@ def import_page() -> None:
         async def on_upload(e) -> None:
             imports = Path(ws) / "_imports"
             imports.mkdir(parents=True, exist_ok=True)
-            base, ext = Path(e.file.name).stem, Path(e.file.name).suffix
-            dest = imports / e.file.name
+            fn = Path(e.file.name).name or "upload"  # basename ONLY — an upload named "../x" must not escape
+            base, ext = Path(fn).stem, Path(fn).suffix
+            dest = imports / fn
             n = 1
             while dest.exists():  # don't clobber a same-named file already in the batch
                 dest = imports / f"{base}_{n}{ext}"
                 n += 1
             dest.write_bytes(await e.file.read())
-            _PENDING.setdefault(ws, []).append({"path": str(dest), "name": e.file.name})
+            _PENDING.setdefault(ws, []).append({"path": str(dest), "name": fn})
             _JOBS.pop(ws, None)  # a new upload starts a fresh flow
             render()
 
@@ -139,7 +140,12 @@ def import_page() -> None:
                     ui.label(f"…and {n - 10} more").classes("text-caption text-grey")
 
         # Large files become many AI calls; the shared free Gemini key has a tight limit.
-        big = any(Path(f["path"]).stat().st_size > 200_000 for f in pending)
+        def _too_big(p) -> bool:
+            try:
+                return Path(p).stat().st_size > 200_000
+            except OSError:  # file removed between upload and this check
+                return False
+        big = any(_too_big(f["path"]) for f in pending)
         if big and settings.providers.notes == "gemini" and credentials.EMBEDDED_KEY_ACTIVE:
             ui.label("Heads up: large files are split into many AI calls and the shared free Gemini key "
                      "may hit its limit (those parts come in as raw text). For big files/batches, add your "
@@ -218,8 +224,8 @@ def import_page() -> None:
                     timer.deactivate()
                     if total == 1 and len(job["created"]) == 1:  # single file -> open it (old UX)
                         _open(job["created"][0]["path"])
-                    else:
-                        render()
+                    else:  # defer: render() clears THIS panel, so don't run it inside the tick callback
+                        ui.timer(0.05, render, once=True)
 
             timer = ui.timer(0.5, tick)
         else:  # done

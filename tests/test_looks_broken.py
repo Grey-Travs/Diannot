@@ -25,10 +25,11 @@ def test_clean_blocks_are_not_flagged():
 
 
 def test_raw_text_wall_flagged():
-    wall = BodyBlock(text="word " * 200)  # ~1000 chars, no ** bold structure
+    wall = BodyBlock(text="word " * 250)  # ~1250 chars, no ** bold structure
     assert S.looks_broken(wall) and "unstructured" in S.looks_broken(wall).lower()
-    structured = BodyBlock(text="The **term** is important. " * 40)  # long but bolded -> not a wall
+    structured = BodyBlock(text="The **term** is important. " * 60)  # long but bolded -> not a wall
     assert S.looks_broken(structured) is None
+    assert S.looks_broken(BodyBlock(text="A clear paragraph. " * 35)) is None  # ~665 chars: NOT flagged
 
 
 def test_table_flattened_into_list_flagged():
@@ -68,7 +69,7 @@ def test_heuristic_flags_empty_for_clean_note():
 
 
 def test_heuristic_flags_maps_indices():
-    note = Note(title="t", blocks=[BodyBlock(text="ok **fine**"), BodyBlock(text="x" * 700)])
+    note = Note(title="t", blocks=[BodyBlock(text="ok **fine**"), BodyBlock(text="x" * 1100)])
     flags = S.heuristic_flags(note)
     assert set(flags) == {1} and isinstance(flags[1], str)
 

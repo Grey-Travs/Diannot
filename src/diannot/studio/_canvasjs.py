@@ -49,6 +49,7 @@ _INIT_TEMPLATE = r"""
   function emitChange(el){
     clearTimeout(emitTimer);
     emitTimer = setTimeout(function(){
+      if(!page.contains(el)) return;  // re-rendered/removed before the debounce fired -> stale, skip
       var r = page.getBoundingClientRect(), b = el.getBoundingClientRect();
       emitEvent('canvas_changed', {
         id: el.dataset.id,
@@ -68,6 +69,7 @@ _INIT_TEMPLATE = r"""
     var target = resizing ? handle : el;
     target.setPointerCapture(ev.pointerId);
     function mv(e){
+      if(!page.contains(el)){ try{ target.releasePointerCapture(ev.pointerId); }catch(_e){} return; }
       if(resizing){
         var nw = clamp(ow + (e.clientX - sx), 44, r.width);
         var nh = clamp(oh + (e.clientY - sy), 26, r.height);
@@ -112,6 +114,7 @@ _INIT_TEMPLATE = r"""
   }
 
   window.dnCanvasRender = function(boxes){
+    clearTimeout(emitTimer);  // cancel any pending drag-emit so a stale box can't report bad geometry
     Array.prototype.slice.call(page.querySelectorAll('.dn-box')).forEach(function(n){ n.remove(); });
     sel = null;
     (boxes || []).forEach(makeBox);

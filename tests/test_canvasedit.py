@@ -42,6 +42,21 @@ def test_apply_box_updates_by_id_and_roundtrips():
     assert not apply_box(note, "no-such-id", 0, 0, 1, 1, 0)
 
 
+def test_apply_box_clamps_garbage():
+    # a buggy/hostile client can't push Infinity/NaN/out-of-range geometry into the saved note
+    note = _note()
+    note_to_canvas(note)
+    bid = note.blocks[0].id
+    assert apply_box(note, bid, float("inf"), float("nan"), 1e9, -5, 2)
+    box = note.blocks[0].box
+    assert box.x == 0.0 and box.y == 0.0          # inf/nan -> default 0
+    assert box.w == 100.0 and box.h == 1.0        # 1e9 -> 100, -5 -> min 1
+    assert box.z == 2
+    # and a non-int z falls back to 0 without raising
+    assert apply_box(note, bid, 10, 10, 20, 10, "oops")
+    assert note.blocks[0].box.z == 0
+
+
 def test_find_index_and_default_box():
     note = _note()
     note_to_canvas(note)
