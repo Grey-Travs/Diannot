@@ -594,12 +594,28 @@ async def _collect(messages) -> str:
 _CLAUDE_TIMEOUT = 300.0  # wall-clock cap for one Claude structuring call (was unbounded)
 
 
+def _claude_cli_error(exc: Exception, stderr: list[str]) -> RuntimeError:
+    """Turn an SDK process/connection failure into a RuntimeError that CARRIES the CLI's stderr. The
+    retry loops only catch RuntimeError, but a ProcessError ("Command failed with exit code 1") is a
+    plain ClaudeSDKError — so without this it escaped UNCAUGHT (no retry, hard failure) AND hid the real
+    reason (e.g. a rate/usage limit) behind the SDK's generic 'Check stderr output for details'."""
+    tail = " | ".join(s.strip() for s in stderr[-6:] if s.strip())
+    return RuntimeError(f"Claude CLI failed: {exc}{(' — ' + tail) if tail else ''}")
+
+
 async def _run_text(prompt: str, model: str, system: str = SYSTEM_PROMPT) -> tuple[str, list[str]]:
     stderr: list[str] = []
-    text = await asyncio.wait_for(
-        _collect(query(prompt=prompt, options=_options(model, system, stderr.append))),
-        timeout=_CLAUDE_TIMEOUT,
-    )
+    try:
+        text = await asyncio.wait_for(
+            _collect(query(prompt=prompt, options=_options(model, system, stderr.append))),
+            timeout=_CLAUDE_TIMEOUT,
+        )
+    except (asyncio.TimeoutError, TimeoutError):
+        raise
+    except Exception as exc:  # noqa: BLE001 — convert to a retryable RuntimeError carrying the stderr
+        if _CLINotFound is not None and isinstance(exc, _CLINotFound):
+            raise
+        raise _claude_cli_error(exc, stderr) from exc
     return text, stderr
 
 
@@ -611,7 +627,14 @@ async def _run_multimodal(
     async def _stream():
         yield {"type": "user", "message": {"role": "user", "content": content}}
 
-    text = await _collect(query(prompt=_stream(), options=_options(model, system, stderr.append)))
+    try:
+        text = await _collect(query(prompt=_stream(), options=_options(model, system, stderr.append)))
+    except (asyncio.TimeoutError, TimeoutError):
+        raise
+    except Exception as exc:  # noqa: BLE001 — convert to a retryable RuntimeError carrying the stderr
+        if _CLINotFound is not None and isinstance(exc, _CLINotFound):
+            raise
+        raise _claude_cli_error(exc, stderr) from exc
     return text, stderr
 
 
@@ -722,7 +745,9 @@ _CHUNK_THRESHOLD = 6000  # only split inputs larger than this
 _BISECT_FLOOR = 2500   # don't split a chunk below this when recovering from an output overflow
 # Concurrent AI calls per provider: the SHARED free Gemini key has a tight rate limit, so go gentle;
 # Claude (the user's own subscription) and a local Ollama have headroom.
-_PARALLEL = {"gemini": 2, "claude": 6, "ollama": 1}
+# Claude (esp. Opus) has a tight per-minute rate limit; firing many concurrent calls rate-limits the
+# subscription and the CLI exits 1. Keep it LOW (a rate-limited chunk also retries with backoff).
+_PARALLEL = {"gemini": 2, "claude": 2, "ollama": 1}
 
 
 def _split_for_structuring(text: str, target: int = _CHUNK_TARGET) -> list[str]:
@@ -809,7 +834,10 @@ def _structure_one(
         overflow = _is_overflow(last_error, last_text)
         if attempt:
             # A rate-limit needs the per-minute window to clear; ordinary errors just need a moment.
-            rate_limited = "limit was hit" in last_error.lower()
+            low = last_error.lower()
+            rate_limited = (any(t in low for t in ("limit was hit", "rate limit", "usage limit",
+                                                   "overloaded", "429", "quota", "too many requests"))
+                            or "claude cli failed" in low)  # batch CLI exit-1 is usually a rate limit
             time.sleep(22 if rate_limited else min(2 ** attempt, 8))
         # An output overflow won't fix itself on retry — split the chunk and structure each half.
         if attempt and overflow and len(raw_text) > _BISECT_FLOOR:
