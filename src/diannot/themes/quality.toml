@@ -3,7 +3,7 @@
 name = "Clinical Sample / ISO & Quality"
 
 [colors]
-primary = "#B8860B"        # dark goldenrod — headings & terms
+primary = "#8F6808"        # deep goldenrod — headings & terms (darkened to clear WCAG AA on white)
 primary_dark = "#8A6400"   # deep amber — bold key terms
 accent = "#1F4E79"         # navy — secondary accent
 accent_soft = "#F4ECD6"    # pale gold

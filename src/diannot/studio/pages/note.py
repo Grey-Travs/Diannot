@@ -654,6 +654,7 @@ def note_page(path: str = "", view: str = "") -> None:
         elif t == "image":
             _bind_text(b, "src", "Image path / URL", area=False)
             _bind_text(b, "caption", "Caption", area=False)
+            _bind_text(b, "alt", "Alt text (for screen readers)", area=False)
             _bind_text(b, "source_credit", "Source credit", area=False)
             ui.upload(on_upload=lambda e, b=b: _upload(b, e), auto_upload=True).props("accept=image/*").classes("w-full")
             ui.label("Image width (%)").classes("text-caption text-grey")

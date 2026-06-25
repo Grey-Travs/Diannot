@@ -37,7 +37,7 @@
   </figure>
 {% elif b.type == 'image' %}
   <figure class="img {{ cls }}">
-    <img src="{{ b.src }}" alt="{{ b.alt or '' }}"{% if b.width %} style="width: {{ b.width }}%"{% endif %}>
+    <img src="{{ b.src }}" alt="{{ b.alt or b.caption or '' }}"{% if b.width %} style="width: {{ b.width }}%"{% endif %}>
     {% if b.caption or b.source_credit %}<figcaption>{{ b.caption or '' }}{% if b.source_credit %} <span class="credit">{{ b.source_credit }}</span>{% endif %}</figcaption>{% endif %}
   </figure>
 {% elif b.type == 'diagram' %}

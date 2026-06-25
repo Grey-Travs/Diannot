@@ -1,7 +1,7 @@
 name = "Skeletal Anatomy"
 
 [colors]
-primary = "#6B7A45"
+primary = "#5F6E3C"        # olive (darkened slightly to clear WCAG AA as small term/title text)
 primary_dark = "#535F36"
 accent = "#C7D4A8"
 accent_soft = "#F3F4F0"
