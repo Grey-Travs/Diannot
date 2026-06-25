@@ -434,6 +434,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "claude-agent-sdk" },
+    { name = "cryptography" },
     { name = "jinja2" },
     { name = "playwright" },
     { name = "pydantic" },
@@ -470,6 +471,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-sdk" },
+    { name = "cryptography", specifier = ">=42" },
     { name = "genanki", marker = "extra == 'anki'", specifier = ">=0.13" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "nicegui", marker = "extra == 'editor'", specifier = ">=2.0" },

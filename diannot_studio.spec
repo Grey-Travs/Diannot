@@ -12,8 +12,10 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 datas, binaries, hiddenimports = [], [], []
 
-# Full collection (code + data + binaries) for the frameworks.
-for pkg in ("nicegui", "pywebview", "playwright"):
+# Full collection (code + data + binaries) for the frameworks. ``cryptography`` is included so its
+# native Ed25519 backend ships — the self-update integrity gate (studio/updater.py) needs it to verify
+# the signed release manifest before launching any downloaded installer.
+for pkg in ("nicegui", "pywebview", "playwright", "cryptography"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b

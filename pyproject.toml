@@ -24,6 +24,9 @@ dependencies = [
     "claude-agent-sdk",
     "python-docx>=1.1",
     "python-pptx>=0.6.23",
+    # Ed25519 signing/verification for the self-update integrity gate (studio/updater.py). Ed25519
+    # isn't in the stdlib; this is the one well-maintained dep for it.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
@@ -60,3 +63,10 @@ select = ["E9", "F", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The real-Chromium subprocess smoke tests contend with each other (port/resource) when interleaved,
+# so they are DESELECTED from the default run and executed one-at-a-time in a dedicated CI job
+# (`pytest -o addopts= tests/<smoke>.py`). `pytest -q` locally stays fast and needs no Chromium.
+markers = [
+    "browser: real-Chromium subprocess UI smoke test (run serially; deselected by default)",
+]
+addopts = "-m 'not browser'"

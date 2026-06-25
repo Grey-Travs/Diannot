@@ -361,7 +361,13 @@ def home_page() -> None:
                 ui.spinner()
                 ui.label("Downloading the update… Diannot will close to finish installing.")
         try:
-            path = await run_blocking(updater.download_installer, info["url"])
+            path = await run_blocking(updater.download_and_verify, info)
+        except updater.IntegrityError:
+            # Content-fail-closed: a partial/tampered/rolled-back update was refused. Stay put.
+            ui.notify("Update couldn't be verified and was cancelled. You're still on the working "
+                      "version.", type="negative", multi_line=True)
+            _show_update_banner(info)
+            return
         except Exception as exc:
             ui.notify(f"Update download failed: {exc}", type="negative", multi_line=True)
             _show_update_banner(info)
