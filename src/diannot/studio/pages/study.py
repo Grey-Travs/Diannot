@@ -10,7 +10,7 @@ from ...cards import Deck, cards_from_note, generate_cards_ai, load_deck, merge_
 from ...config import Settings
 from ...glossary import build_glossary
 from ...io_utils import atomic_write_text
-from ...models import Note
+from ...models import Note, load_note
 from ...quiz import generate_quiz
 from ...srs import GRADES, deck_stats, due_cards, review_card
 from .. import usage
@@ -187,7 +187,7 @@ def study_page(path: str = "") -> None:
         return
     note_path = Path(path)
     try:
-        note = Note.model_validate_json(note_path.read_text(encoding="utf-8"))
+        note = load_note(note_path.read_text(encoding="utf-8"))
     except Exception as exc:
         ui.label(f"Could not open this note: {exc}").classes("p-4 text-negative")
         return

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from nicegui import app
 
-from ..models import Note
+from ..models import Note, load_note
 
 
 def _base_dir() -> Path:
@@ -58,7 +58,7 @@ def list_notes(workspace: Path | str) -> list[tuple[str, Note]]:
         if ".trash" in path.parts or path.name.endswith(".glossary.note.json"):
             continue  # skip soft-deleted notes + generated glossary sidecars (reached via Study)
         try:
-            notes.append((str(path), Note.model_validate_json(path.read_text(encoding="utf-8"))))
+            notes.append((str(path), load_note(path.read_text(encoding="utf-8"))))
         except Exception:
             continue  # skip non-note JSON
     return notes

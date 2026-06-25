@@ -1,0 +1,25 @@
+{
+  "title": "Hemostasis (legacy note)",
+  "theme": "circulatory",
+  "pack": "study_notes",
+  "subject": "Phlebotomy",
+  "source": "lecture3.pdf",
+  "layout_mode": "flow",
+  "blocks": [
+    {"type": "banner", "text": "HEMOSTASIS", "subtitle": "How bleeding stops", "layout": "full"},
+    {"type": "script_heading", "text": "Primary Hemostasis"},
+    {"type": "subheading", "text": "Platelet plug", "caps": true},
+    {"type": "body", "text": "Vessel injury exposes **collagen**, triggering platelet adhesion.", "source_page": 3, "confidence": "high"},
+    {"type": "term_definition", "term": "Thrombocyte", "definition": "another name for a platelet"},
+    {"type": "list", "ordered": true, "items": [
+      {"text": "Adhesion", "children": [{"text": "via von Willebrand factor", "children": []}]},
+      {"text": "Activation", "children": []},
+      {"text": "Aggregation", "children": []}
+    ]},
+    {"type": "table", "headers": ["Pathway", "Trigger"], "rows": [["Intrinsic", "contact"], ["Extrinsic", "tissue factor"]], "caption": "Coagulation cascade", "layout": "full"},
+    {"type": "image", "src": "platelet.png", "alt": "platelet diagram", "caption": "A resting platelet", "source_credit": "Author", "width": 60},
+    {"type": "diagram", "mermaid": "graph TD; A[Injury]-->B[Plug];", "caption": "Plug formation"},
+    {"type": "callout", "variant": "key_points", "title": "Remember", "items": ["Platelets first", "Then fibrin"]},
+    {"type": "quote", "text": "Clotting is a cascade, not a switch.", "attribution": "Dr. Cruz"}
+  ]
+}

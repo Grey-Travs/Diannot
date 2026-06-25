@@ -14,14 +14,14 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse
 
 from ..cards import Deck, render_deck_html
 from ..config import Settings
-from ..models import Note
+from ..models import Note, load_note
 from ..quiz import Quiz, render_quiz_html
 from ..render import render_note_html
 
 
 @app.get("/preview/note", response_class=HTMLResponse)
 def preview_note(path: str = Query(...), v: int = 0, theme: str | None = None, pack: str | None = None) -> str:
-    note = Note.model_validate_json(Path(path).read_text(encoding="utf-8"))
+    note = load_note(Path(path).read_text(encoding="utf-8"))
     return render_note_html(note, settings=Settings(), theme=theme, pack=pack)
 
 

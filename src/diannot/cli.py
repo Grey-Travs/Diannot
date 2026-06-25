@@ -20,6 +20,7 @@ from .models import (
     ScriptHeadingBlock,
     SubheadingBlock,
     TermDefinitionBlock,
+    load_note,
 )
 from .render import render_note_html
 
@@ -110,7 +111,7 @@ def ingest(
     Text and text-PDFs are read directly; images and scanned PDFs are read with the
     configured AI's vision (or offline Tesseract via --tesseract).
     """
-    from .pipeline import decide_mode, ingest_file
+    from .pipeline import decide_mode, ingest_file, persist_page_images
 
     settings = Settings()
     theme = theme or settings.render.default_theme
@@ -129,8 +130,12 @@ def ingest(
 
     out = out or input_path.with_suffix(".note.json")
     out.parent.mkdir(parents=True, exist_ok=True)
+    persist_page_images(note, out)  # vision-failed: keep the page scans next to the note (else no-op)
     out.write_text(note.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
     typer.echo(f"Structured {len(note.blocks)} blocks -> {out}")
+    if note.extraction_status in ("partial", "failed"):
+        typer.secho("  ! The AI was busy, so part of this came in as raw text (nothing was lost). "
+                    "Re-run to retry organizing it.", fg="yellow")
 
     if render:
         _write_render(note, settings, out.stem, theme, pdf, png)
@@ -154,7 +159,7 @@ def batch(
     Subfolders are preserved as chapters; each source file becomes one note JSON.
     Per-file failures are reported and skipped (the batch continues).
     """
-    from .pipeline import SUPPORTED_SUFFIXES, decide_mode, ingest_file
+    from .pipeline import SUPPORTED_SUFFIXES, decide_mode, ingest_file, persist_page_images
 
     settings = Settings()
     theme = theme or settings.render.default_theme
@@ -167,7 +172,7 @@ def batch(
         raise typer.Exit(1)
 
     out.mkdir(parents=True, exist_ok=True)
-    ok, failed, rendered = 0, 0, []
+    ok, failed, degraded, rendered = 0, 0, 0, []
     for i, f in enumerate(files, start=1):
         rel = f.relative_to(input_dir)
         note_path = (out / rel).with_suffix(".note.json")
@@ -179,8 +184,13 @@ def batch(
                 f, mode=mode, theme=theme, pack=pack, model=model,
                 vision=vision, tesseract=tesseract, dpi=dpi, settings=settings,
             )
+            persist_page_images(note, note_path)  # vision-failed: keep the scans (else a no-op)
             note_path.write_text(note.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
             ok += 1
+            if note.extraction_status in ("partial", "failed"):
+                degraded += 1
+                typer.secho(f"  ! {rel}: AI was busy — part came in as raw text (re-run to retry).",
+                            fg="yellow")
             if render:
                 html_path = note_path.with_suffix(".html")
                 html_path.write_text(render_note_html(note, settings=settings), encoding="utf-8")
@@ -196,7 +206,10 @@ def batch(
         (out / "index.html").write_text("\n".join(index), encoding="utf-8")
         typer.echo(f"Index -> {out / 'index.html'}")
 
-    typer.secho(f"Done: {ok} ok, {failed} failed -> {out}", fg="green" if not failed else "yellow")
+    summary = f"Done: {ok} ok, {failed} failed"
+    if degraded:
+        summary += f" ({degraded} came in partly as raw text — re-run those to retry)"
+    typer.secho(f"{summary} -> {out}", fg="green" if not (failed or degraded) else "yellow")
 
 
 @app.command()
@@ -209,7 +222,7 @@ def render(
 ) -> None:
     """Render a note JSON to themed HTML, optionally exporting PDF/PNG."""
     settings = Settings()
-    note = Note.model_validate_json(note_path.read_text(encoding="utf-8"))
+    note = load_note(note_path.read_text(encoding="utf-8"))
     stem = note_path.stem + (f"-{theme}" if theme else "") + (f"-{pack}" if pack else "")
     _write_render(note, settings, stem, theme, pdf, png, pack=pack)
 
@@ -236,11 +249,11 @@ def flashcards(
 
     settings = Settings()
     if source.is_dir():
-        notes = [(p, Note.model_validate_json(p.read_text(encoding="utf-8")))
+        notes = [(p, load_note(p.read_text(encoding="utf-8")))
                  for p in sorted(source.glob("**/*.note.json"))]
         deck_name, default_out = source.name, source / f"{source.name}.deck.json"
     else:
-        note = Note.model_validate_json(source.read_text(encoding="utf-8"))
+        note = load_note(source.read_text(encoding="utf-8"))
         notes, deck_name, default_out = [(source, note)], note.title, source.with_suffix(".deck.json")
     if not notes:
         typer.secho("No notes found.", fg="red")
@@ -371,7 +384,7 @@ def quiz(
     from .quiz import generate_quiz, render_quiz_html
 
     settings = Settings()
-    note = Note.model_validate_json(note_path.read_text(encoding="utf-8"))
+    note = load_note(note_path.read_text(encoding="utf-8"))
     typer.echo(f"Generating a {count}-question quiz with {settings.providers.study} "
                f"({model or settings.models.structure})…")
     try:

@@ -5,7 +5,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-from .models import Note
+from .models import load_note
 
 DEFAULT_DB = ".diannot_index.db"
 # Snippet highlight markers: control chars that can't occur in note prose, so literal '[' ']'
@@ -60,7 +60,7 @@ def build_index(source: Path | str, db_path: Path | str = DEFAULT_DB) -> int:
         rows = 0
         for p in paths:
             try:
-                note = Note.model_validate_json(p.read_text(encoding="utf-8"))
+                note = load_note(p.read_text(encoding="utf-8"))
             except Exception:
                 continue  # skip non-note JSON
             for block in note.blocks:

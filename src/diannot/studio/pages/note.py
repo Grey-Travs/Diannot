@@ -20,7 +20,7 @@ from nicegui import app, ui
 from ...config import PACKAGE_DIR, Settings
 from ...editor import BLOCK_TYPES, _new_block
 from ...io_utils import atomic_write_text
-from ...models import BodyBlock, ImageBlock, ListItem, Note
+from ...models import BodyBlock, ImageBlock, ListItem, load_note
 from ...render import render_note_html
 from ...structure import (
     FIXABLE_BLOCK_TYPES,
@@ -29,6 +29,8 @@ from ...structure import (
     heuristic_flags,
     restructure_fragment,
     scan_note_blocks,
+    structure_image,
+    structure_text,
 )
 from .._canvasjs import CANVAS_CSS, canvas_init_js
 from .._editorjs import EDITOR_CSS, VENDOR_SCRIPTS, editor_init_js
@@ -92,7 +94,7 @@ def note_page(path: str = "", view: str = "") -> None:
         return
     note_path = Path(path)
     try:
-        note = Note.model_validate_json(note_path.read_text(encoding="utf-8"))
+        note = load_note(note_path.read_text(encoding="utf-8"))
     except Exception as exc:
         ui.label(f"Could not open this note: {exc}").classes("p-4 text-negative")
         return
@@ -304,6 +306,14 @@ def note_page(path: str = "", view: str = "") -> None:
             await fix_block(i, result["hint"])
 
     def save(notify: bool = True) -> None:
+        if note.is_future_schema:
+            # Loaded read-only from a NEWER on-disk schema (newer fields/blocks were dropped from the
+            # in-memory view). Writing would clobber the file and silently lose them — refuse, and
+            # tell the user once when they actively try (autosave/disconnect pass notify=False).
+            if notify:
+                ui.notify("This note was made in a newer version of Diannot — it's read-only here so "
+                          "nothing is lost. Update Diannot to edit it.", type="warning", multi_line=True)
+            return
         atomic_write_text(note_path, note.model_dump_json(indent=2, exclude_none=True))
         state["dirty"] = False
         if state["ready"]:
@@ -428,6 +438,91 @@ def note_page(path: str = "", view: str = "") -> None:
         ui.notify(f"Checked {sum(1 for b in note.blocks if b.type in FIXABLE_BLOCK_TYPES)} block(s) — "
                   f"flagged {len(flags)}." + ("" if flags else "  All look good! ✓"),
                   type="positive", multi_line=True)
+
+    async def retry_organize() -> None:
+        """Re-organize a FAILED note, then reload. A vision-failed note (``source_images``) re-runs
+        VISION on the preserved page scans; otherwise the text path re-organizes the preserved raw
+        text. Either way the whole note was raw/placeholder, so there is no structured content to
+        lose. Runs in THIS handler's live context (never inside a dialog slot) — the v0.6.1 slot-crash
+        fix. PARTIAL notes don't use this — a wholesale re-run would clobber their good (possibly
+        hand-edited) blocks; they fix the few raw blocks in place via the per-block 'Fix with AI'."""
+        if state.get("fixing") or state.get("scanning"):
+            ui.notify("An AI task is already running — one at a time.", type="warning")
+            return
+        await flush_editor()  # don't lose unsaved edits across the reload
+
+        # Vision-failed note (a scanned PDF / photo): re-run VISION on the preserved page images,
+        # not the text path. The placeholder ImageBlocks are the whole note, so a wholesale re-run
+        # loses nothing. Branch BEFORE the text fallback — a vision-failed note has no source_text.
+        if note.source_images:
+            try:
+                images = [(assets_dir / name).read_bytes() for name in note.source_images]
+            except OSError:
+                images = []
+            if not images:
+                ui.notify("The saved page images are missing — can't retry this note.", type="warning")
+                return
+            # Keep source_pages index-aligned with `images` (one per image block, in order); only
+            # pass them if every page is known, else None — a partial list would mis-attribute pages.
+            pages = [b.source_page for b in note.blocks if b.type == "image"]
+            src_pages = pages if (pages and all(p is not None for p in pages)) else None
+            state["fixing"] = True
+            finish = _progress_dialog("Organizing with AI",
+                                      ["Reading the page images…", "Structuring them…", "Styling the note…"])
+            try:
+                new = await run_blocking(structure_image, images, title=note.title, theme=note.theme,
+                                         pack=note.pack, settings=settings, source_pages=src_pages)
+            except Exception as exc:  # noqa: BLE001 — surfaced to the user (incl. "still busy")
+                ui.notify(f"Couldn't organize: {exc}", type="negative", multi_line=True)
+                return
+            finally:
+                state["fixing"] = False
+                finish()
+            stale = list(note.source_images)  # the persisted PNGs, now superseded by the structured note
+            note.blocks = new.blocks
+            note.extraction_status = None
+            note.source_text = None
+            note.source_images = None
+            save(notify=False)
+            for name in stale:  # delete the scans only AFTER the structured note is safely saved
+                try:
+                    (assets_dir / name).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            ui.notify("Organized! ✓", type="positive", multi_line=True)
+            ui.navigate.to(f"/note?path={quote(str(note_path))}")  # reload: refresh banner + editor
+            return
+
+        raw = note.source_text or "\n\n".join(  # fall back to the preserved low-confidence body text
+            b.text for b in note.blocks if b.type == "body" and b.confidence == "low" and b.text)
+        if not raw.strip():
+            ui.notify("There's no saved text to re-organize.", type="warning")
+            return
+        state["fixing"] = True
+        finish = _progress_dialog("Organizing with AI",
+                                  ["Reading your text…", "Structuring it…", "Styling the note…"])
+        try:
+            new = await run_blocking(structure_text, raw, title=note.title, theme=note.theme,
+                                     pack=note.pack, settings=settings)
+        except Exception as exc:  # noqa: BLE001 — surfaced to the user
+            ui.notify(f"Couldn't organize: {exc}", type="negative", multi_line=True)
+            return
+        finally:
+            state["fixing"] = False
+            finish()
+        if new.extraction_status == "failed":  # still entirely raw — the service is busy again
+            ui.notify("The AI service is still busy — try again in a minute.", type="warning")
+            return
+        # Adopt the result even if only PARTIALLY organized (strictly better than all-raw); keep the
+        # status/source_text the re-run reported so a still-partial note keeps its per-block fix path.
+        note.blocks = new.blocks
+        note.extraction_status = new.extraction_status
+        note.source_text = new.source_text
+        save(notify=False)
+        ui.notify("Organized! ✓" if not new.extraction_status
+                  else "Organized most of it — a few parts are still raw text you can fix in place.",
+                  type="positive", multi_line=True)
+        ui.navigate.to(f"/note?path={quote(str(note_path))}")  # reload: refresh banner + editor
 
     # ---- canvas (free-positioning) editor ----
     def _reseed_canvas() -> None:
@@ -711,6 +806,38 @@ def note_page(path: str = "", view: str = "") -> None:
         ui.button("PDF", icon="picture_as_pdf", on_click=lambda: export("pdf")).props("outline no-caps")
         ui.button("PNG", icon="image", on_click=lambda: export("png")).props("outline no-caps")
         ui.button(icon="delete", on_click=_confirm_delete_note).props("outline color=negative no-caps")
+
+    # ---- newer-schema banner: this note was made by a NEWER build (loaded read-only, safe mode) ----
+    # Built once, OUTSIDE block_col, so rebuild() never wipes it. Saving is already a no-op (see save()).
+    if note.is_future_schema:
+        with ui.row().classes("items-center gap-3 w-full no-wrap mb-1") \
+                .style("margin:0 8px;padding:10px 14px;background:#EAF1FF;"
+                       "border:1px solid #9CC0F5;border-radius:8px;"):
+            ui.icon("system_update", color="primary")
+            ui.label("This note was made in a newer version of Diannot. It's shown read-only so newer "
+                     "content isn't lost — update Diannot to edit it.") \
+                .classes("grow text-caption").style("color:#1f3a66;min-width:0;")
+
+    # ---- degraded-import banner: some/all of this note came in as raw text (AI was busy) ----
+    # Built once, OUTSIDE block_col, so rebuild() never wipes it; a successful retry reloads the page.
+    # FAILED (all raw) -> a whole-note "Retry organizing" is safe (nothing structured to lose).
+    # PARTIAL (some raw) -> NO wholesale retry (it would clobber the good/edited blocks); the raw
+    # blocks are flagged below, so point the user at the non-destructive per-block "Fix with AI".
+    if note.extraction_status in ("partial", "failed"):
+        with ui.row().classes("items-center gap-3 w-full no-wrap mb-1") \
+                .style("margin:0 8px;padding:10px 14px;background:#FFF4E5;"
+                       "border:1px solid #F0C36D;border-radius:8px;"):
+            ui.icon("auto_fix_high", color="warning")
+            if note.extraction_status == "failed":
+                ui.label("This note couldn't be auto-organized — the AI service was busy. Your full "
+                         "text is saved below; nothing was lost.") \
+                    .classes("grow text-caption").style("color:#7a5b00;min-width:0;")
+                ui.button("Retry organizing", icon="auto_awesome", on_click=retry_organize) \
+                    .props("color=primary no-caps dense")
+            else:  # partial
+                ui.label("Part of this note came in as raw text (highlighted below) — the AI was busy. "
+                         "Use “Fix with AI” on those blocks to organize them.") \
+                    .classes("grow text-caption").style("color:#7a5b00;min-width:0;")
 
     # ---- editor + preview ----
     with ui.row().classes("w-full no-wrap gap-4 px-2"):

@@ -18,12 +18,12 @@ from .models import (
     ImageBlock,
     ListBlock,
     ListItem,
-    Note,
     QuoteBlock,
     ScriptHeadingBlock,
     SubheadingBlock,
     TableBlock,
     TermDefinitionBlock,
+    load_note,
 )
 from .render import render_note_html
 
@@ -58,7 +58,7 @@ def run_editor(note_path: Path | str, host: str = "127.0.0.1", port: int = 8080,
 
     note_path = Path(note_path)
     settings = Settings()
-    state = {"note": Note.model_validate_json(note_path.read_text(encoding="utf-8")), "v": 0}
+    state = {"note": load_note(note_path.read_text(encoding="utf-8")), "v": 0}
 
     assets_dir = note_path.parent / f"{note_path.stem}.assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
@@ -107,6 +107,10 @@ def run_editor(note_path: Path | str, host: str = "127.0.0.1", port: int = 8080,
         def save() -> None:
             from .io_utils import atomic_write_text
 
+            if state["note"].is_future_schema:  # read-only: a newer build wrote it; don't drop its content
+                ui.notify("This note was made in a newer version of Diannot — update to edit it.",
+                          type="warning")
+                return
             atomic_write_text(note_path, state["note"].model_dump_json(indent=2, exclude_none=True))
             ui.notify(f"Saved {note_path.name}", type="positive")
 

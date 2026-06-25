@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .models import BannerBlock, Note, SubheadingBlock, TermDefinitionBlock
+from .models import BannerBlock, Note, SubheadingBlock, TermDefinitionBlock, load_note
 
 
 def load_notes(source: Path | str) -> list[Note]:
@@ -17,7 +17,7 @@ def load_notes(source: Path | str) -> list[Note]:
     notes: list[Note] = []
     for p in paths:
         try:
-            notes.append(Note.model_validate_json(p.read_text(encoding="utf-8")))
+            notes.append(load_note(p.read_text(encoding="utf-8")))
         except Exception:
             continue  # not a note (e.g. a deck or quiz JSON)
     return notes

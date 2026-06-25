@@ -63,6 +63,14 @@ def test_note_extra_forbidden():
         Note.model_validate({"title": "t", "blocks": [], "bogus": 1})
 
 
+def test_schema_version_defaults_and_is_omitted_at_baseline():
+    # New notes carry the current version, but it is omitted on save while it equals the baseline (1)
+    # so versioned-build output stays byte-identical to pre-versioning notes (see test_schema_version).
+    note = Note(title="t")
+    assert note.schema_version == 1
+    assert "schema_version" not in note.model_dump_json(exclude_none=True)
+
+
 def test_layout_mode_defaults_to_flow():
     # An old note JSON with no layout_mode / id / box must still load (backward-compat).
     note = Note.model_validate({"title": "t", "blocks": [{"type": "body", "text": "x"}]})

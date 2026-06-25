@@ -1,0 +1,13 @@
+{
+  "schema_version": 999,
+  "title": "Note from a newer Diannot",
+  "theme": "histology",
+  "pack": "study_notes",
+  "future_only_field": {"some": "structure a newer build added"},
+  "blocks": [
+    {"type": "body", "text": "This block is understood by the current build."},
+    {"type": "body", "text": "Known block with an unknown extra field.", "newer_block_field": 7},
+    {"type": "hologram", "data": "a block type this build has never heard of"},
+    {"type": "term_definition", "term": "Keep", "definition": "this one parses too"}
+  ]
+}
