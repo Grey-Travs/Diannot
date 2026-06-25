@@ -1,6 +1,8 @@
 """Gemini multi-key rotation pool: spread work across several keys (different accounts = separate
 free-tier quota) and skip any key that just hit its rate limit."""
+import io
 import os
+import urllib.error
 
 import pytest
 
@@ -90,6 +92,90 @@ def test_non_ratelimit_error_does_not_rotate(monkeypatch):
     with pytest.raises(RuntimeError, match="500"):
         providers.gemini_complete_pooled("s", "p", "m")
     assert calls == ["k1"]  # a non-rate-limit error isn't fixed by switching keys
+
+
+def test_overload_or_quota_auto_switches_to_next_key(monkeypatch):
+    # A 503/overload or RESOURCE_EXHAUSTED drain (GeminiRateLimited), not just a clean 429, must rotate.
+    providers.set_gemini_keys(["k1", "k2"])
+    seen = []
+
+    def fake(system, prompt, model, api_key, images=None, timeout=120.0):
+        seen.append(api_key)
+        if api_key == "k1":
+            raise providers.GeminiRateLimited("Gemini is busy right now (overloaded).", retry_after=5)
+        return "STRUCTURED"
+
+    monkeypatch.setattr(providers, "gemini_complete", fake)
+    assert providers.gemini_complete_pooled("s", "p", "m") == "STRUCTURED"
+    assert seen == ["k1", "k2"]
+
+
+def test_revoked_key_is_evicted_and_others_still_work(monkeypatch):
+    # One bad/revoked key must NOT brick the whole job — it's skipped and the next key is used.
+    providers.set_gemini_keys(["bad", "good"])
+    seen = []
+
+    def fake(system, prompt, model, api_key, images=None, timeout=120.0):
+        seen.append(api_key)
+        if api_key == "bad":
+            raise providers.GeminiKeyInvalid("Gemini rejected the request — key looks bad.")
+        return "OK"
+
+    monkeypatch.setattr(providers, "gemini_complete", fake)
+    assert providers.gemini_complete_pooled("s", "p", "m") == "OK"
+    assert seen == ["bad", "good"]
+
+
+def test_all_keys_invalid_raises_key_error_not_ratelimit(monkeypatch):
+    providers.set_gemini_keys(["b1", "b2"])
+    monkeypatch.setattr(providers, "gemini_complete",
+                        lambda *a, **k: (_ for _ in ()).throw(providers.GeminiKeyInvalid("rejected")))
+    with pytest.raises(providers.GeminiKeyInvalid, match="rejected"):
+        providers.gemini_complete_pooled("s", "p", "m")
+
+
+def test_retry_after_from_body_sets_cooldown(monkeypatch):
+    providers.set_gemini_keys(["k1", "k2"])
+    captured: dict[str, float] = {}
+    real_cool = providers._GEMINI_POOL.cool_down
+
+    def spy_cool(key, seconds=providers._COOLDOWN_SECONDS):
+        captured[key] = seconds
+        real_cool(key, seconds=seconds)
+
+    monkeypatch.setattr(providers._GEMINI_POOL, "cool_down", spy_cool)
+
+    def fake(system, prompt, model, api_key, images=None, timeout=120.0):
+        if api_key == "k1":
+            raise providers.GeminiRateLimited("limit was hit", retry_after=123.0)
+        return "OK"
+
+    monkeypatch.setattr(providers, "gemini_complete", fake)
+    providers.gemini_complete_pooled("s", "p", "m")
+    assert captured.get("k1") == 123.0  # honored the server's RetryInfo instead of the flat 60s
+
+
+def test_gemini_complete_classifies_503_as_rate_limited(monkeypatch):
+    def boom(*a, **k):
+        raise urllib.error.HTTPError("http://x", 503, "Unavailable", {},
+                                     io.BytesIO(b'{"error":{"status":"UNAVAILABLE"}}'))
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    with pytest.raises(providers.GeminiRateLimited):
+        providers.gemini_complete("s", "p", "gemini-2.5-flash", "AIza-key")
+
+
+def test_gemini_complete_classifies_bad_key_as_invalid(monkeypatch):
+    def boom(*a, **k):
+        raise urllib.error.HTTPError("http://x", 403, "Forbidden", {}, io.BytesIO(b"forbidden"))
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    with pytest.raises(providers.GeminiKeyInvalid):
+        providers.gemini_complete("s", "p", "gemini-2.5-flash", "AIza-key")
+
+
+def test_parse_retry_after():
+    assert providers._parse_retry_after('{"error":{"details":[{"retryDelay":"57s"}]}}') == 57.0
+    assert providers._parse_retry_after("not json") is None
+    assert providers._parse_retry_after('{"error":{}}') is None
 
 
 def test_resolve_prefers_configured_and_ignores_env(monkeypatch):

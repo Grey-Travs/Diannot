@@ -17,7 +17,7 @@ from nicegui import background_tasks, ui
 
 from ...config import Settings
 from ...io_utils import atomic_write_text
-from ...pipeline import SUPPORTED_SUFFIXES, decide_mode, ingest_file
+from ...pipeline import SUPPORTED_SUFFIXES, decide_mode, ingest_file, persist_page_images
 from .. import credentials
 from ..background import run_blocking
 from ..layout import studio_layout
@@ -61,9 +61,13 @@ async def _run_import_batch(workspace: str, job: dict, files: list[dict], params
             note = await run_blocking(ingest_file, Path(f["path"]), settings=settings,
                                       on_progress=_progress, title=title, **file_params)
             dest = _unique_note_path(workspace, title)
+            # A vision failure preserved the page images — write them next to the note and point the
+            # placeholder ImageBlocks at the studio's /file route so they show + a retry can re-read them.
+            persist_page_images(note, dest, src_for=lambda p: f"/file?path={quote(str(p))}")
             atomic_write_text(dest, note.model_dump_json(indent=2, exclude_none=True))
+            degraded = note.extraction_status in ("partial", "failed")  # some/all came in as raw text
             fe["status"], fe["note_path"] = "done", str(dest)
-            job["created"].append({"name": dest.name, "path": str(dest)})
+            job["created"].append({"name": dest.name, "path": str(dest), "degraded": degraded})
         except Exception as exc:  # noqa: BLE001 — collected + shown; one bad file won't abort the batch
             fe["status"], fe["error"] = "error", str(exc)
             job["failed"].append({"name": f["name"], "error": str(exc)})
@@ -238,6 +242,9 @@ def import_page() -> None:
             for c in created:
                 ui.button(c["name"], icon="auto_awesome",
                           on_click=lambda p=c["path"]: _open(p)).props("flat no-caps")
+                if c.get("degraded"):  # the AI was busy — text preserved, retry from inside the note
+                    ui.label("made, but part came in as raw text — open it to retry organizing") \
+                        .classes("text-caption text-warning").style("margin-left:2.2rem")
             for fl in failed:
                 ui.label(f"✗ {fl['name']}: {fl['error']}").classes("text-caption text-negative")
             ui.button("Import more", icon="add",

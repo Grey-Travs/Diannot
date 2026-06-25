@@ -18,6 +18,7 @@ import asyncio
 import base64
 import json
 import os
+import random
 import re
 import shutil
 import sys
@@ -36,7 +37,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from . import providers as _providers
 from .config import Settings
-from .models import BannerBlock, Block, BodyBlock, Note
+from .models import BannerBlock, Block, BodyBlock, ImageBlock, Note
 
 try:
     from claude_agent_sdk import CLINotFoundError as _CLINotFound
@@ -269,7 +270,15 @@ def _build_vision_prompt(title: str | None, n_images: int, pages_label: str | No
         title_hint
         + f"You are given {n_images} page image(s) of study material. {page_line}"
         "Transcribe and structure ALL of their content into the JSON document described "
-        "in your instructions, in logical reading order. Output JSON only."
+        "in your instructions, in logical reading order. Output JSON only.\n"
+        "Vision specifics for this med-lab material:\n"
+        "- Lecture SLIDES: treat each slide as a section — its title becomes a script_heading; read "
+        "multi-column layouts left column fully, then right (never interleave columns).\n"
+        "- Labelled DIAGRAMS / micrographs: turn each readable label or legend entry into a "
+        "term_definition (Label — what it is), or a 2-column table when there are many; record the "
+        "magnification/stain if shown. NEVER invent a label you cannot clearly read.\n"
+        "- Comparison TABLES spanning the page: reconstruct as one full-width table with the headers.\n"
+        "- Tag any block you transcribed from a blurry/low-quality region with \"confidence\":\"low\"."
     )
 
 
@@ -591,7 +600,21 @@ async def _collect(messages) -> str:
     return text
 
 
-_CLAUDE_TIMEOUT = 300.0  # wall-clock cap for one Claude structuring call (was unbounded)
+_CLAUDE_TIMEOUT = 300.0  # base wall-clock cap for one Claude structuring call (scaled by size below)
+# A scanned PDF is structured in small page-batches (not one giant all-pages call), so a big scan can't
+# overflow the model or hang — each batch is bounded, retryable, and degrades independently.
+_VISION_BATCH_PAGES = 4
+
+
+# Per-call timeouts SCALE with input size (big/dense input legitimately needs more time) but stay under a
+# generous absolute ceiling — so a large file gets leeway instead of a flat 300s cap, yet a truly dead
+# call can't hang forever. Tuned loosely; the bottleneck is the model, not these numbers.
+_CLAUDE_CALL_MAX = 900.0
+
+
+def _scaled_timeout(units: float, per_unit: float, base: float = _CLAUDE_TIMEOUT) -> float:
+    """A size-aware timeout: ``base`` + ``per_unit`` × ``units``, clamped to ``_CLAUDE_CALL_MAX``."""
+    return min(_CLAUDE_CALL_MAX, base + per_unit * max(0.0, units))
 
 
 def _claude_cli_error(exc: Exception, stderr: list[str]) -> RuntimeError:
@@ -603,12 +626,14 @@ def _claude_cli_error(exc: Exception, stderr: list[str]) -> RuntimeError:
     return RuntimeError(f"Claude CLI failed: {exc}{(' — ' + tail) if tail else ''}")
 
 
-async def _run_text(prompt: str, model: str, system: str = SYSTEM_PROMPT) -> tuple[str, list[str]]:
+async def _run_text(
+    prompt: str, model: str, system: str = SYSTEM_PROMPT, timeout: float = _CLAUDE_TIMEOUT
+) -> tuple[str, list[str]]:
     stderr: list[str] = []
     try:
         text = await asyncio.wait_for(
             _collect(query(prompt=prompt, options=_options(model, system, stderr.append))),
-            timeout=_CLAUDE_TIMEOUT,
+            timeout=timeout,
         )
     except (asyncio.TimeoutError, TimeoutError):
         raise
@@ -620,7 +645,7 @@ async def _run_text(prompt: str, model: str, system: str = SYSTEM_PROMPT) -> tup
 
 
 async def _run_multimodal(
-    content: list[dict], model: str, system: str = SYSTEM_PROMPT
+    content: list[dict], model: str, system: str = SYSTEM_PROMPT, timeout: float = _CLAUDE_TIMEOUT
 ) -> tuple[str, list[str]]:
     stderr: list[str] = []
 
@@ -628,7 +653,11 @@ async def _run_multimodal(
         yield {"type": "user", "message": {"role": "user", "content": content}}
 
     try:
-        text = await _collect(query(prompt=_stream(), options=_options(model, system, stderr.append)))
+        # Bounded like _run_text (it used to be UNBOUNDED — a big vision call could hang forever).
+        text = await asyncio.wait_for(
+            _collect(query(prompt=_stream(), options=_options(model, system, stderr.append))),
+            timeout=timeout,
+        )
     except (asyncio.TimeoutError, TimeoutError):
         raise
     except Exception as exc:  # noqa: BLE001 — convert to a retryable RuntimeError carrying the stderr
@@ -638,19 +667,42 @@ async def _run_multimodal(
     return text, stderr
 
 
+def _gemini_pool_exhausted(exc: Exception) -> bool:
+    """True when the ENTIRE Gemini pool is drained/rejected (not a single transient 429) — the point at
+    which falling back to another engine is worth it. A lone transient rate-limit does NOT match, so we
+    don't burn the user's Claude on a blip that key-rotation + backoff would have ridden out."""
+    return ("all your gemini keys" in str(exc).lower()
+            or isinstance(exc, _providers.GeminiKeyInvalid))
+
+
 def _gen_text(prompt: str, model: str, settings: Settings, provider: str, system: str) -> tuple[str, list[str]]:
     """Run a text completion through the chosen backend. Returns (text, stderr lines)."""
     if provider == "ollama":
         cfg = settings.providers
         return _providers.ollama_complete(system, prompt, cfg.ollama_model, cfg.ollama_host), []
+    timeout = _scaled_timeout(len(prompt) / 1000.0, 8.0)  # +8s per 1k chars, base 300s, cap 900s
     if provider == "gemini":
         cfg = settings.providers
-        return _providers.gemini_complete_pooled(
-            system, prompt, cfg.gemini_model,
-            fallback_key=os.environ.get("GEMINI_API_KEY", ""),
-        ), []
+        try:
+            return _providers.gemini_complete_pooled(
+                system, prompt, cfg.gemini_model, timeout=timeout,
+                fallback_key=os.environ.get("GEMINI_API_KEY", ""),
+            ), []
+        except RuntimeError as exc:
+            # Last-resort engine failover: the WHOLE Gemini pool is drained — use Claude (the user's own
+            # login, no per-call cost) if it's available, before the caller degrades to raw text.
+            if _gemini_pool_exhausted(exc) and claude_engine_available():
+                try:
+                    return _gen_text(prompt, model, settings, "claude", system)
+                except RuntimeError as claude_exc:
+                    # Claude turned out unusable (CLI missing) — degrade on the (transient) Gemini error
+                    # so a Gemini user's content is preserved, not hard-failed with a "_CLAUDE_MISSING".
+                    if str(claude_exc) == _CLAUDE_MISSING:
+                        raise exc from None
+                    raise
+            raise
     try:
-        return asyncio.run(_run_text(prompt, model, system=system))
+        return asyncio.run(_run_text(prompt, model, system=system, timeout=timeout))
     except Exception as exc:
         if _CLINotFound is not None and isinstance(exc, _CLINotFound):
             raise RuntimeError(_CLAUDE_MISSING) from None
@@ -663,6 +715,7 @@ def _gen_vision(
     content: list[dict], prompt_text: str, images: list[bytes], model: str, settings: Settings, provider: str
 ) -> tuple[str, list[str]]:
     """Run a vision completion through the chosen backend. Returns (text, stderr lines)."""
+    timeout = _scaled_timeout(len(images), 60.0)  # +60s per page image, base 300s, cap 900s
     if provider in ("ollama", "gemini"):
         cfg = settings.providers
         b64 = [base64.b64encode(img).decode("ascii") for img in images]
@@ -671,17 +724,31 @@ def _gen_vision(
                 SYSTEM_PROMPT, prompt_text, cfg.ollama_vision_model, cfg.ollama_host, images=b64
             )
         else:
-            text = _providers.gemini_complete_pooled(
-                SYSTEM_PROMPT, prompt_text, cfg.gemini_model,
-                images=b64, timeout=300,  # vision generations run longer than the text default
-                fallback_key=os.environ.get("GEMINI_API_KEY", ""),
-            )
+            try:
+                text = _providers.gemini_complete_pooled(
+                    SYSTEM_PROMPT, prompt_text, cfg.gemini_model,
+                    images=b64, timeout=timeout,
+                    fallback_key=os.environ.get("GEMINI_API_KEY", ""),
+                )
+            except RuntimeError as exc:
+                # Whole Gemini pool drained -> fall back to Claude vision if available (last resort).
+                if _gemini_pool_exhausted(exc) and claude_engine_available():
+                    try:
+                        return _gen_vision(content, prompt_text, images, model, settings, "claude")
+                    except RuntimeError as claude_exc:
+                        # Claude unusable (CLI missing) -> degrade on the Gemini error, keep the scans.
+                        if str(claude_exc) == _CLAUDE_MISSING:
+                            raise exc from None
+                        raise
+                raise
         return text, []
     try:
-        return asyncio.run(_run_multimodal(content, model))
+        return asyncio.run(_run_multimodal(content, model, timeout=timeout))
     except Exception as exc:
         if _CLINotFound is not None and isinstance(exc, _CLINotFound):
             raise RuntimeError(_CLAUDE_MISSING) from None
+        if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+            raise RuntimeError("Claude timed out on these page(s) — retrying.") from None
         raise
 
 
@@ -700,13 +767,21 @@ def complete_json(
     model = model or settings.models.structure
     last_error = "unknown error"
     for attempt in range(max_retries + 1):
+        if attempt:
+            _sleep_before_retry(attempt, last_error)  # back off on a rate limit before re-asking
         attempt_prompt = prompt
         if attempt:
             attempt_prompt += (
                 f"\n\nYour previous response was invalid ({last_error}). "
                 "Return ONLY a single valid JSON object."
             )
-        text, _ = _gen_text(attempt_prompt, model, settings, settings.providers.study, system)
+        try:
+            text, _ = _gen_text(attempt_prompt, model, settings, settings.providers.study, system)
+        except RuntimeError as exc:
+            if str(exc) == _CLAUDE_MISSING:
+                raise  # a real config problem, not transient
+            last_error = str(exc)  # rate limit / network — back off and retry instead of crashing
+            continue
         if not text:
             last_error = "empty response"
             continue
@@ -750,11 +825,10 @@ _BISECT_FLOOR = 2500   # don't split a chunk below this when recovering from an 
 _PARALLEL = {"gemini": 2, "claude": 2, "ollama": 1}
 
 
-def _split_for_structuring(text: str, target: int = _CHUNK_TARGET) -> list[str]:
-    """Split a large document into chunks at blank-line (paragraph) boundaries, packing paragraphs up
-    to ``target`` chars. Small inputs return a single chunk unchanged."""
-    if len(text) <= _CHUNK_THRESHOLD:
-        return [text]
+def _pack_paragraphs(text: str, target: int) -> list[str]:
+    """Pack blank-line-separated paragraphs into chunks up to ``target`` chars, hard-splitting any
+    single paragraph still much larger than the target. Shared by :func:`_split_for_structuring`
+    (chunking a big doc for the AI) and :func:`_raw_text_blocks` (preserving a failed chunk's text)."""
     chunks: list[str] = []
     cur = ""
     for para in re.split(r"\n\s*\n", text):
@@ -772,7 +846,15 @@ def _split_for_structuring(text: str, target: int = _CHUNK_TARGET) -> list[str]:
             out.extend(chunk[i:i + target] for i in range(0, len(chunk), target))
         else:
             out.append(chunk)
-    return [c for c in out if c.strip()] or [text]
+    return [c for c in out if c.strip()]
+
+
+def _split_for_structuring(text: str, target: int = _CHUNK_TARGET) -> list[str]:
+    """Split a large document into chunks at blank-line (paragraph) boundaries, packing paragraphs up
+    to ``target`` chars. Small inputs return a single chunk unchanged."""
+    if len(text) <= _CHUNK_THRESHOLD:
+        return [text]
+    return _pack_paragraphs(text, target) or [text]
 
 
 def _is_overflow(error: str, text: str) -> bool:
@@ -819,6 +901,18 @@ def _looks_understructured(note: Note, raw_text: str) -> bool:
     return max(lengths, default=0) >= 700 and sum(lengths) >= 0.5 * len(raw_text.strip())
 
 
+def _sleep_before_retry(attempt: int, last_error: str) -> None:
+    """Back off before retrying a transient structuring failure. A rate-limit needs the per-minute
+    window to clear (~22s); ordinary errors just need a moment. Jitter so concurrent workers don't
+    retry in lockstep and re-trigger the same limit. Shared by the text (:func:`_structure_one`) and
+    vision (:func:`structure_image`) retry loops so the two paths can't drift apart."""
+    low = last_error.lower()
+    rate_limited = (any(t in low for t in ("limit was hit", "rate limit", "usage limit",
+                                           "overloaded", "429", "quota", "too many requests"))
+                    or "claude cli failed" in low)  # batch CLI exit-1 is usually a rate limit
+    time.sleep((22 if rate_limited else min(2 ** attempt, 8)) + random.uniform(0, 3))
+
+
 def _structure_one(
     raw_text: str, title: str | None, theme: str, pack: str, model: str,
     settings: Settings, max_retries: int,
@@ -833,12 +927,7 @@ def _structure_one(
     for attempt in range(max_retries + 1):
         overflow = _is_overflow(last_error, last_text)
         if attempt:
-            # A rate-limit needs the per-minute window to clear; ordinary errors just need a moment.
-            low = last_error.lower()
-            rate_limited = (any(t in low for t in ("limit was hit", "rate limit", "usage limit",
-                                                   "overloaded", "429", "quota", "too many requests"))
-                            or "claude cli failed" in low)  # batch CLI exit-1 is usually a rate limit
-            time.sleep(22 if rate_limited else min(2 ** attempt, 8))
+            _sleep_before_retry(attempt, last_error)
         # An output overflow won't fix itself on retry — split the chunk and structure each half.
         if attempt and overflow and len(raw_text) > _BISECT_FLOOR:
             halves = _bisect(raw_text)
@@ -878,21 +967,52 @@ def _structure_one(
     raise _failure(max_retries, last_error, last_stderr, settings.providers.notes)
 
 
+_RAW_BLOCK_TARGET = 1500  # chars per preserved-raw-text body block (split a failed chunk, never drop)
+
+
+def _raw_text_blocks(raw_text: str) -> list[BodyBlock]:
+    """Preserve ``raw_text`` IN FULL as low-confidence body blocks — the structuring fallback.
+
+    Reuses :func:`_pack_paragraphs` so a failed chunk is split the same way the chunker splits input
+    (no single block is an unwieldy wall). Never drops content: the concatenation round-trips the
+    input (modulo whitespace packing) so the user can retry organizing it later."""
+    text = raw_text.strip()
+    if not text:
+        return []
+    return [BodyBlock(text=p, confidence="low") for p in _pack_paragraphs(text, _RAW_BLOCK_TARGET)]
+
+
 def _structure_one_safe(
     raw_text: str, title: str | None, theme: str, pack: str, model: str,
     settings: Settings, max_retries: int, is_first: bool,
 ) -> Note:
-    """Like :func:`_structure_one` but NEVER raises (used in the parallel path): if a chunk can't be
-    structured after retries, keep its raw text as a low-confidence body block so no content is lost
-    and the rest of the big import still succeeds. The Claude-missing error still propagates."""
+    """Like :func:`_structure_one` but NEVER raises (used in the single-chunk and parallel paths): if
+    a chunk can't be structured after retries, keep its FULL raw text as low-confidence body blocks
+    (no content is ever lost) and flag the note ``extraction_status="failed"`` so the UI can offer a
+    retry. A successful structuring returns with status ``None``. The Claude-missing error propagates."""
     try:
         return _structure_one(raw_text, title, theme, pack, model, settings, max_retries)
-    except RuntimeError as exc:
+    except Exception as exc:  # noqa: BLE001 — never-fail: ANY error degrades to preserved content
         if str(exc) == _CLAUDE_MISSING:
             raise
         blocks = ([BannerBlock(text=title)] if (is_first and title) else [])
-        blocks.append(BodyBlock(text=raw_text.strip()[:4000], confidence="low"))
-        return Note(title=title or "Notes", theme=theme, pack=pack, blocks=blocks)
+        blocks += _raw_text_blocks(raw_text)  # the WHOLE chunk, never truncated
+        return Note(title=title or "Notes", theme=theme, pack=pack, blocks=blocks,
+                    extraction_status="failed")
+
+
+def _merge_one_banner(notes: list["Note"], title: str | None) -> "Note":
+    """Merge several chunk/batch notes into the first, keeping EXACTLY ONE banner — the signature
+    poster header — wherever each model happened to place its own. Page order is preserved; the banner
+    is the first one any batch produced (or one synthesized from ``title`` if none did)."""
+    merged = notes[0]
+    all_blocks = [b for note in notes for b in note.blocks]
+    banner = next((b for b in all_blocks if b.type == "banner"), None)
+    non_banners = [b for b in all_blocks if b.type != "banner"]
+    if banner is None and title:
+        banner = BannerBlock(text=title)
+    merged.blocks = ([banner] if banner else []) + non_banners
+    return merged
 
 
 def structure_text(
@@ -918,7 +1038,13 @@ def structure_text(
     if len(chunks) == 1:
         if on_progress:
             on_progress(1, 1)
-        return _structure_one(chunks[0], title, theme, pack, model, settings, max_retries)
+        # _safe (not _one): a single-chunk failure preserves the text + flags the note instead of
+        # raising, so a paste/small file is never lost on a transient rate limit.
+        note = _structure_one_safe(chunks[0], title, theme, pack, model, settings, max_retries,
+                                   is_first=True)
+        if note.extraction_status == "failed":
+            note.source_text = raw_text  # the FULL input, kept for "Retry organizing"
+        return note
 
     # Structure the chunks concurrently (provider-aware: gentle on the shared free key), keeping
     # results in document order for a clean merge. Extra retries so a rate-limited chunk recovers.
@@ -938,12 +1064,15 @@ def structure_text(
             if on_progress:
                 on_progress(done, len(chunks))
 
-    merged = results[0]
-    for note in results[1:]:
-        extra = note.blocks
-        if extra and extra[0].type == "banner":  # only the first chunk keeps the chapter banner
-            extra = extra[1:]
-        merged.blocks.extend(extra)
+    merged = _merge_one_banner(results, title)
+    # Surface a degraded import: some/all chunks fell back to raw text (usually a rate limit). Flag
+    # the note so the UI can show a banner + "Retry organizing", and keep the FULL input for the retry.
+    n_failed = sum(1 for r in results if r is not None and r.extraction_status == "failed")
+    if n_failed:
+        merged.extraction_status = "failed" if n_failed == len(results) else "partial"
+        merged.source_text = raw_text
+    else:
+        merged.extraction_status = None  # normalize: results[0] may have carried a per-chunk status
     return merged
 
 
@@ -986,6 +1115,11 @@ def structure_image(
     provider = settings.providers.notes
     last_error, last_stderr = "unknown error", []
     for attempt in range(max_retries + 1):
+        if attempt:
+            # Mirror the text path: back off + jitter between attempts. (Without this — and the
+            # try/except below — the vision loop never retried a raised transient error and never
+            # slept, so it failed on the first rate-limit and lost the page content.)
+            _sleep_before_retry(attempt, last_error)
         content, prompt_text = base_content, base_prompt_text
         if attempt:
             retry = (
@@ -994,11 +1128,135 @@ def structure_image(
             )
             content = base_content + [{"type": "text", "text": retry}]
             prompt_text = f"{base_prompt_text}\n\n{retry}"
-        text, last_stderr = _gen_vision(content, prompt_text, images, model, settings, provider)
-        note, last_error = _note_from_response(text, title, theme, pack)
-        if note is not None:
-            if source_pages and len(source_pages) == 1:
-                for block in note.blocks:
-                    block.source_page = source_pages[0]
-            return note
+        try:
+            text, last_stderr = _gen_vision(content, prompt_text, images, model, settings, provider)
+        except RuntimeError as exc:
+            if str(exc) == _CLAUDE_MISSING:
+                raise  # not transient — fail fast with the clear message
+            last_error, text = str(exc), ""  # transient (rate limit/network) — retry next attempt
+        if text:
+            note, last_error = _note_from_response(text, title, theme, pack)
+            if note is not None:
+                if source_pages:
+                    for block in note.blocks:
+                        if len(source_pages) == 1:
+                            block.source_page = source_pages[0]      # single page: attribute every block
+                        elif block.source_page is None:
+                            block.source_page = source_pages[0]      # multi-page: backfill any the model left blank
+                return note
     raise _failure(max_retries, last_error, last_stderr, provider)
+
+
+def _pending_image_note(
+    images: list[bytes],
+    title: str | None,
+    theme: str,
+    pack: str,
+    source_pages: list[int] | None,
+) -> Note:
+    """The never-lose-content fallback for a vision failure: one low-confidence :class:`ImageBlock`
+    placeholder per page (1:1 with ``images`` so :func:`persist_page_images` maps each to
+    ``page_NN.png``), carrying the raw PNG bytes out on ``_pending_page_images`` for the caller to
+    persist + offer "Retry organizing". ``extraction_status="failed"``."""
+    blocks: list[Block] = [BannerBlock(text=title)] if title else []
+    for i, _img in enumerate(images):
+        page = source_pages[i] if source_pages and i < len(source_pages) else None
+        blocks.append(ImageBlock(
+            src=f"page_{i + 1:02d}.png",  # placeholder; the caller rewrites it once the path is known
+            alt=f"Scanned page {page}" if page else "Scanned page",
+            caption="Couldn't auto-organize this page — your scan is saved here. Use “Retry "
+                    "organizing” once the AI service is free.",
+            confidence="low",
+            source_page=page,
+        ))
+    note = Note(title=title or "Notes", theme=theme, pack=pack, blocks=blocks,
+                extraction_status="failed")
+    note._pending_page_images = list(images)  # carried out to the caller for persistence
+    return note
+
+
+def _structure_image_batch_safe(
+    images: list[bytes],
+    title: str | None = None,
+    theme: str = "circulatory",
+    pack: str = "study_notes",
+    model: str | None = None,
+    settings: Settings | None = None,
+    max_retries: int = 2,
+    source_pages: list[int] | None = None,
+) -> Note:
+    """Structure ONE page-batch, never raising (the vision counterpart of :func:`_structure_one_safe`):
+    on a persistent failure keep this batch's pages as low-confidence :class:`ImageBlock` placeholders
+    so no content is lost. The Claude-missing error still propagates (a real config problem)."""
+    try:
+        return structure_image(images, title=title, theme=theme, pack=pack, model=model,
+                               settings=settings, max_retries=max_retries, source_pages=source_pages)
+    except Exception as exc:  # noqa: BLE001 — never-fail: ANY error degrades to preserved scans
+        if str(exc) == _CLAUDE_MISSING:
+            raise
+        return _pending_image_note(images, title, theme, pack, source_pages)
+
+
+def _structure_image_safe(
+    images: list[bytes],
+    title: str | None = None,
+    theme: str = "circulatory",
+    pack: str = "study_notes",
+    model: str | None = None,
+    settings: Settings | None = None,
+    max_retries: int = 2,
+    source_pages: list[int] | None = None,
+    on_progress=None,
+) -> Note:
+    """Structure scanned page image(s) into a :class:`Note`, NEVER raising and NEVER losing content.
+
+    A multi-page scan is split into small page-BATCHES (``_VISION_BATCH_PAGES``) structured
+    CONCURRENTLY — so a big PDF can't be crammed into one oversized, unbounded call that overflows the
+    model or hangs (the dominant big-scan failure). The batches' blocks merge into one note in page
+    order, keeping a single banner. On full success the note is clean (status ``None``). If any batch
+    still can't be organized after its retries, the WHOLE note degrades to one placeholder per page with
+    every scan preserved for "Retry organizing" — identical to the old all-or-nothing fallback, so the
+    persist/retry contract (see :func:`diannot.pipeline.persist_page_images`) is unchanged.
+    ``on_progress(done, total)`` reports per-batch progress. Claude-missing still propagates."""
+    if not images:
+        raise ValueError("No images to structure.")
+    settings = settings or Settings()
+
+    batches: list[tuple[list[bytes], list[int] | None]] = []
+    for start in range(0, len(images), _VISION_BATCH_PAGES):
+        imgs = images[start:start + _VISION_BATCH_PAGES]
+        pgs = source_pages[start:start + _VISION_BATCH_PAGES] if source_pages else None
+        batches.append((imgs, pgs))
+
+    if len(batches) == 1:
+        note = _structure_image_batch_safe(images, title, theme, pack, model, settings, max_retries,
+                                           source_pages)
+        if on_progress:
+            on_progress(1, 1)
+        return note
+
+    # Concurrent, provider-aware (gentle on the shared free key); extra retries so a rate-limited batch
+    # recovers. Results stay in page order for a clean merge.
+    workers = min(_PARALLEL.get(settings.providers.notes, 2), len(batches))
+    results: list[Note | None] = [None] * len(batches)
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_structure_image_batch_safe, imgs, title if i == 0 else None,
+                        theme, pack, model, settings, max(max_retries, 3), pgs): i
+            for i, (imgs, pgs) in enumerate(batches)
+        }
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()  # _CLAUDE_MISSING (if any) propagates here
+            done += 1
+            if on_progress:
+                on_progress(done, len(batches))
+
+    if any(r is not None and r.extraction_status == "failed" for r in results):
+        # Any batch failed -> contract-preserving all-pages fallback (scans kept, whole-note retry).
+        return _pending_image_note(images, title, theme, pack, source_pages)
+
+    merged = _merge_one_banner([r for r in results if r is not None], title)
+    merged.extraction_status = None
+    merged._pending_page_images = []
+    return merged

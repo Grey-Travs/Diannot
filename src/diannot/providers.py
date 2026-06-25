@@ -101,6 +101,34 @@ def ollama_complete(
     return (data.get("message") or {}).get("content", "") or ""
 
 
+class GeminiRateLimited(RuntimeError):
+    """Key/project is rate-limited or quota-exhausted — rotate to another key and back off.
+
+    Covers HTTP 429, 503/UNAVAILABLE (overload), and any ``RESOURCE_EXHAUSTED``/quota body. ``retry_after``
+    (seconds, parsed from Google's RetryInfo when present) tunes how long to rest the key."""
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class GeminiKeyInvalid(RuntimeError):
+    """The key was rejected (bad / expired / revoked) — skip THIS key and try another, don't abort."""
+
+
+def _parse_retry_after(body: str) -> float | None:
+    """Best-effort seconds from Google's error body (``error.details[].retryDelay`` like ``"57s"``)."""
+    try:
+        details = (json.loads(body).get("error") or {}).get("details") or []
+        for d in details:
+            delay = d.get("retryDelay") if isinstance(d, dict) else None
+            if isinstance(delay, str) and delay.rstrip("s").replace(".", "", 1).isdigit():
+                return float(delay.rstrip("s"))
+    except (ValueError, AttributeError, TypeError):
+        pass
+    return None
+
+
 def gemini_complete(
     system: str,
     prompt: str,
@@ -139,12 +167,25 @@ def gemini_complete(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:  # key not echoed (no `from exc`)
+        try:
+            body = exc.read().decode("utf-8", "ignore")
+        except Exception:  # noqa: BLE001 — the body is best-effort diagnostics only
+            body = ""
+        blow = body.lower()
         if exc.code in (400, 401, 403):
-            raise RuntimeError("Gemini rejected the request — the API key looks bad or expired. "
-                               "Check it in Settings.") from None
-        if exc.code == 429:
-            raise RuntimeError("Gemini's free limit was hit (it's shared by everyone using the bundled "
-                               "key). Wait a minute, or add your own free key in Settings.") from None
+            # Bad/expired/revoked key — skip THIS key (the pool evicts it) instead of failing the whole job.
+            raise GeminiKeyInvalid("Gemini rejected the request — the API key looks bad or expired. "
+                                   "Check it in Settings.") from None
+        if exc.code == 429 or "resource_exhausted" in blow or "quota" in blow:
+            # "free limit was hit" wording kept so the backoff layer still treats it as a rate limit.
+            raise GeminiRateLimited("Gemini's free limit was hit (it's shared by everyone using the "
+                                    "bundled key). Wait a minute, or add your own free key in Settings.",
+                                    retry_after=_parse_retry_after(body)) from None
+        if exc.code in (500, 503) and ("unavailable" in blow or "overload" in blow or exc.code == 503):
+            # Transient overload — rotate to another key and back off rather than hard-failing.
+            raise GeminiRateLimited("Gemini is busy right now (the free service is overloaded) — "
+                                    "switching keys / waiting a moment.",
+                                    retry_after=_parse_retry_after(body)) from None
         raise RuntimeError(f"Gemini error {exc.code}. Try again in a moment.") from None
     except (urllib.error.URLError, OSError) as exc:
         if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
@@ -177,6 +218,7 @@ def gemini_complete(
 # hammering one. Keys are supplied locally (user Settings / a build-time bundle); never hardcoded.
 _GEMINI_RATELIMIT_HINT = "limit was hit"  # substring of gemini_complete's 429 message
 _COOLDOWN_SECONDS = 60.0  # a rate-limited key rests ~one limit-window before being tried again
+_DISABLED_SECONDS = 1800.0  # a rejected/revoked key is parked for the session, not retried every request
 
 
 class _GeminiPool:
@@ -253,12 +295,14 @@ def gemini_complete_pooled(
     """Run one Gemini completion, rotating across the key pool and skipping rate-limited keys.
 
     If the pool is empty, fall back to ``fallback_key`` (single-key / CLI behavior). Tries each
-    configured key at most once per call; raises a (key-free) rate-limit error only after every key
-    has been tried and rate-limited.
+    configured key at most once per call: a rate-limited/overloaded key is rested (auto-switch to the
+    next), a rejected/revoked key is parked for the session, and only a genuinely non-key error (e.g. a
+    500 or a network failure) aborts. Raises a key-free error only after EVERY key is exhausted.
     """
     if _GEMINI_POOL.size() == 0:
         return gemini_complete(system, prompt, model, fallback_key, images=images, timeout=timeout)
     tried: set[str] = set()
+    rate_limited = invalid = 0
     for _ in range(_GEMINI_POOL.size()):
         key = _GEMINI_POOL.next_key()
         if not key or key in tried:
@@ -266,11 +310,25 @@ def gemini_complete_pooled(
         tried.add(key)
         try:
             return gemini_complete(system, prompt, model, key, images=images, timeout=timeout)
+        except GeminiKeyInvalid:
+            _GEMINI_POOL.cool_down(key, seconds=_DISABLED_SECONDS)  # revoked/bad — skip for the session
+            invalid += 1
+            continue
         except RuntimeError as exc:
-            if _GEMINI_RATELIMIT_HINT in str(exc).lower():
-                _GEMINI_POOL.cool_down(key)  # this account is rate-limited — try the next one
+            # Auto-switch on a drained/overloaded key — honor isinstance (real calls) AND the legacy
+            # substring (so monkeypatched/plain RuntimeErrors still rotate).
+            if isinstance(exc, GeminiRateLimited) or _GEMINI_RATELIMIT_HINT in str(exc).lower():
+                ra = getattr(exc, "retry_after", None)  # distinguish a real "0s" from "unset" (None)
+                rest = _COOLDOWN_SECONDS if ra is None else max(ra, 1.0)
+                _GEMINI_POOL.cool_down(key, seconds=rest)
+                rate_limited += 1
                 continue
-            raise  # a non-rate-limit error isn't fixed by switching keys
+            raise  # a non-rate-limit, non-key error isn't fixed by switching keys
+    if invalid and not rate_limited:
+        raise GeminiKeyInvalid(
+            "All your Gemini keys were rejected (bad or expired). Add a valid free key in Settings, "
+            "or switch to Claude."
+        )
     raise RuntimeError(
         "All your Gemini keys are rate-limited right now. Add another key in Settings, use Claude, "
         "or wait a minute."
