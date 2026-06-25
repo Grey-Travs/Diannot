@@ -48,3 +48,4 @@ jobs:
           uv run pytest -o addopts= -q tests/test_retry_smoke.py
           uv run pytest -o addopts= -q tests/test_vision_retry_smoke.py
           uv run pytest -o addopts= -q tests/test_future_schema_smoke.py
+          uv run pytest -o addopts= -q tests/test_onboarding_smoke.py

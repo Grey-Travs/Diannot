@@ -20,6 +20,7 @@ from ...io_utils import atomic_write_text
 from ...pipeline import SUPPORTED_SUFFIXES, decide_mode, ingest_file, persist_page_images
 from .. import credentials
 from ..background import run_blocking
+from ..errors import friendly_error
 from ..layout import studio_layout
 from ..workspace import current_workspace
 
@@ -69,8 +70,9 @@ async def _run_import_batch(workspace: str, job: dict, files: list[dict], params
             fe["status"], fe["note_path"] = "done", str(dest)
             job["created"].append({"name": dest.name, "path": str(dest), "degraded": degraded})
         except Exception as exc:  # noqa: BLE001 — collected + shown; one bad file won't abort the batch
-            fe["status"], fe["error"] = "error", str(exc)
-            job["failed"].append({"name": f["name"], "error": str(exc)})
+            msg = friendly_error(exc)  # calm, plain-language — never a raw traceback/CLI blob
+            fe["status"], fe["error"] = "error", msg
+            job["failed"].append({"name": f["name"], "error": msg})
         finally:
             job["done"] += 1
             try:
@@ -97,6 +99,9 @@ def import_page() -> None:
         ui.label("Make notes from files").classes("text-h5")
         ui.label("Drop one or many PDFs, slide decks, documents, photos, or scans — the AI turns each "
                  "into its own styled note.").classes("text-grey")
+        if credentials.EMBEDDED_KEY_ACTIVE:  # release build on the bundled free key — set expectations gently
+            ui.label("Using the free shared AI key — add your own in Settings for higher limits.") \
+                .classes("text-caption text-grey")
 
         async def on_upload(e) -> None:
             imports = Path(ws) / "_imports"

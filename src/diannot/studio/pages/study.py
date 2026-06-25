@@ -15,6 +15,7 @@ from ...quiz import generate_quiz
 from ...srs import GRADES, deck_stats, due_cards, review_card
 from .. import usage
 from ..background import run_blocking
+from ..errors import friendly_error
 from ..layout import studio_layout
 
 
@@ -98,7 +99,7 @@ def _flashcards_tab(note: Note, note_path: Path, settings: Settings) -> None:
                 new += await run_blocking(generate_cards_ai, note, None, settings)
                 usage.record_study()
             except Exception as exc:
-                ui.notify(f"AI cards failed: {exc}", type="warning", multi_line=True)
+                ui.notify(friendly_error(exc, action="make flashcards"), type="warning", multi_line=True)
         merge_cards(deck, new)
         save_deck(deck, deck_path)
         ui.notify(f"{len(deck.cards)} cards ready.", type="positive")
@@ -147,7 +148,7 @@ def _quiz_tab(note: Note, note_path: Path, settings: Settings) -> None:
         try:
             quiz = await run_blocking(generate_quiz, note, None, settings, n)
         except Exception as exc:
-            ui.notify(f"Quiz failed: {exc}", type="negative", multi_line=True)
+            ui.notify(friendly_error(exc, action="make the quiz"), type="negative", multi_line=True)
             return
         usage.record_study()
         atomic_write_text(quiz_path, quiz.model_dump_json(indent=2))
@@ -189,7 +190,7 @@ def study_page(path: str = "") -> None:
     try:
         note = load_note(note_path.read_text(encoding="utf-8"))
     except Exception as exc:
-        ui.label(f"Could not open this note: {exc}").classes("p-4 text-negative")
+        ui.label(friendly_error(exc, action="open this note")).classes("p-4 text-negative")
         return
     settings = Settings()
 

@@ -37,6 +37,7 @@ from .._editorjs import EDITOR_CSS, VENDOR_SCRIPTS, editor_init_js
 from ..background import run_blocking
 from ..canvasedit import apply_box, find_index, note_to_canvas
 from ..docedit import editor_to_blocks, note_to_editor
+from ..errors import friendly_error
 from ..layout import studio_layout
 from ..previews import LIVE, LIVE_ASSETS
 from ..workspace import delete_note
@@ -96,7 +97,7 @@ def note_page(path: str = "", view: str = "") -> None:
     try:
         note = load_note(note_path.read_text(encoding="utf-8"))
     except Exception as exc:
-        ui.label(f"Could not open this note: {exc}").classes("p-4 text-negative")
+        ui.label(friendly_error(exc, action="open this note")).classes("p-4 text-negative")
         return
 
     settings = Settings()
@@ -257,7 +258,7 @@ def note_page(path: str = "", view: str = "") -> None:
             new_blocks, diagnosis = await run_blocking(
                 restructure_fragment, src, hint, settings, reason=state["flags"].get(i))
         except Exception as exc:  # noqa: BLE001 — surfaced to the user
-            ui.notify(f"Fix failed: {exc}", type="negative", multi_line=True)
+            ui.notify(friendly_error(exc, action="fix this block"), type="negative", multi_line=True)
             return
         finally:
             state["fixing"] = False
@@ -376,7 +377,7 @@ def note_page(path: str = "", view: str = "") -> None:
             new_blocks, diagnosis = await run_blocking(
                 restructure_fragment, src, hint, settings, reason=state["flags"].get(idx))
         except Exception as exc:  # noqa: BLE001 — surfaced to the user
-            ui.notify(f"Fix failed: {exc}", type="negative", multi_line=True)
+            ui.notify(friendly_error(exc, action="fix this block"), type="negative", multi_line=True)
             return
         finally:
             state["fixing"] = False
@@ -423,7 +424,7 @@ def note_page(path: str = "", view: str = "") -> None:
         try:
             flags = await run_blocking(scan_note_blocks, note, settings)
         except Exception as exc:  # noqa: BLE001 — surfaced to the user
-            ui.notify(f"Check failed: {exc}", type="negative", multi_line=True)
+            ui.notify(friendly_error(exc, action="check this block"), type="negative", multi_line=True)
             return
         finally:
             state["scanning"] = False
@@ -473,7 +474,7 @@ def note_page(path: str = "", view: str = "") -> None:
                 new = await run_blocking(structure_image, images, title=note.title, theme=note.theme,
                                          pack=note.pack, settings=settings, source_pages=src_pages)
             except Exception as exc:  # noqa: BLE001 — surfaced to the user (incl. "still busy")
-                ui.notify(f"Couldn't organize: {exc}", type="negative", multi_line=True)
+                ui.notify(friendly_error(exc, action="organize this note"), type="negative", multi_line=True)
                 return
             finally:
                 state["fixing"] = False
@@ -505,7 +506,7 @@ def note_page(path: str = "", view: str = "") -> None:
             new = await run_blocking(structure_text, raw, title=note.title, theme=note.theme,
                                      pack=note.pack, settings=settings)
         except Exception as exc:  # noqa: BLE001 — surfaced to the user
-            ui.notify(f"Couldn't organize: {exc}", type="negative", multi_line=True)
+            ui.notify(friendly_error(exc, action="organize this note"), type="negative", multi_line=True)
             return
         finally:
             state["fixing"] = False
@@ -615,7 +616,7 @@ def note_page(path: str = "", view: str = "") -> None:
                 out = await run_blocking(html_to_png, html_path, out_dir / f"{note_path.stem}.png")
             ui.notify(f"Saved {out}", type="positive")
         except Exception as exc:
-            ui.notify(f"Export failed: {exc}", type="negative")
+            ui.notify(friendly_error(exc, action="export this note"), type="negative")
 
     async def _upload(b, e) -> None:
         assets_dir.mkdir(parents=True, exist_ok=True)
