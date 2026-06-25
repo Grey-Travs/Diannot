@@ -215,8 +215,8 @@ uv run diannot index ./notebook && uv run diannot search "platelet"
 
 ```toml
 [models]
-structure = "claude-opus-4-8"   # model for structuring / vision
-summarize = "claude-opus-4-8"
+structure = "claude-sonnet-4-6"   # model for structuring / vision
+summarize = "claude-sonnet-4-6"
 
 [render]
 default_pack = "study_notes"

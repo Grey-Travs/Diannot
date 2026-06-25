@@ -19,7 +19,7 @@ system below is encoded faithfully from those pages.
 |---|---|---|
 | Language / packaging | Python 3.11+ (pinned to 3.13), `uv` + `pyproject.toml` | `.python-version` pins 3.13 for reliable wheels. |
 | AI runtime | **Claude Agent SDK for Python** | Subscription auth via bundled Claude Code CLI first, `ANTHROPIC_API_KEY` fallback. Never hardcode keys. |
-| Default model | `claude-opus-4-8` for both structuring & summarizing | Configurable in `diannot.toml`; can drop to a faster model for structuring later. |
+| Default model (Claude) | `claude-sonnet-4-6` for both structuring & summarizing | Sonnet structures as well as Opus with far higher limits; Settings exposes a Sonnet/Opus/Haiku picker. Configurable in `diannot.toml`. The shipped installer defaults the *provider* to free Gemini (`gemini-2.5-flash`) via bundled keys; dev/pip defaults to Claude. |
 | Data model | Pydantic v2 "blocks" | Canonical storage = JSON files on disk (notebook=folder, chapter=subfolder, note=JSON). |
 | Rendering | Jinja2 → self-contained HTML + CSS | One `<style>` per note; theme injected as CSS variables. |
 | **PDF/PNG export** | **Headless Chromium via Playwright** | Chosen over WeasyPrint: WeasyPrint can't render `-webkit-text-stroke` (the banner outline) and needs fiddly native libs on Windows. Chromium renders the PDF identically to the browser. |
@@ -37,9 +37,9 @@ system below is encoded faithfully from those pages.
 
 ### Layout
 Two-column by default (CSS multi-column: `column-count: 2`). Per-block layout override:
-`auto` (flow), `full` (`column-span: all`), or `col1`/`col2` (specific column — `full`/`auto`
-implemented now; column-pinning is a later enhancement). Tidy, "aesthetic handwritten
-study-notes" feel.
+`auto` (flow), `full` (`column-span: all`), or `col1`/`col2` (specific column). All four are
+implemented — the editor's Left/Right control pins blocks to `col1`/`col2` (rendered side by side).
+Tidy, "aesthetic handwritten study-notes" feel.
 
 ### Fonts (licensable Google Fonts as stand-ins for the proprietary originals)
 All four are **SIL Open Font License (OFL)** → safe to bundle locally for offline rendering.
@@ -84,8 +84,9 @@ Banner poster effect = `-webkit-text-stroke` (outline) + `text-shadow` (drop sha
 | Laboratory Safety | green / teal |
 | Clinical Sample / ISO & Quality | navy + gold/amber |
 
-Shipped so far: `circulatory`, `histology`. Each theme is a TOML file of color values
-injected as CSS variables — add a new theme without touching core code.
+Shipped so far: `circulatory`, `histology`, `biochemistry`, `skeletal`, `ethics`, `lab_safety`,
+`lab_management`, `quality` (+ `von`). Each theme is a TOML file of color values injected as CSS
+variables — add a new theme without touching core code.
 
 ### Style packs (a toggle; `src/diannot/assets/packs/<pack>/`)
 - `study_notes` — light, playful, handwritten feel (**default**, built).
@@ -124,3 +125,13 @@ Plain files → git-friendly, portable, local-first.
 - Never hardcode credentials; bring-your-own-credentials documented in `README.md`.
 - Don't brand as Claude Code / any Anthropic product — this app is "Diannot".
 - Commit at sensible milestones.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

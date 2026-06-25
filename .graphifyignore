@@ -1,0 +1,5 @@
+# Bundled minified third-party libraries (editorjs, mermaid, katex, marked).
+# These are vendored assets, not Diannot source — AST parses their giant
+# single-line files into thousands of single-letter symbols that dominate the
+# graph and pollute queries. Exclude so the graph reflects real modules.
+src/diannot/assets/vendor/
