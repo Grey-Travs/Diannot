@@ -8,7 +8,7 @@
 ; Output:  dist\installer\DiannotStudio-Setup.exe   (per-user install, no admin prompt)
 
 #define AppName "Diannot Studio"
-#define AppVersion "0.6.4"
+#define AppVersion "0.7.0"
 #define AppExe "DiannotStudio.exe"
 #define AppPublisher "Diannot"
 
