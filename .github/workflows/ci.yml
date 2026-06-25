@@ -6,17 +6,45 @@ on:
   pull_request:
 
 jobs:
+  # Fast suite on BOTH the Windows-first target and Linux, on the pinned Python 3.13
+  # (.python-version pins it; uv provisions it). Browser smokes are deselected here (addopts).
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - name: Sync (core + dev)
-        run: uv sync
+      - name: Sync (core + dev + all extras → NiceGUI studio is importable)
+        run: uv sync --all-extras
       - name: Lint
+        if: matrix.os == 'ubuntu-latest'
         run: uv run ruff check .
-      - name: Test
+      - name: Test (fast suite; the real-browser smokes are deselected)
         run: uv run pytest -q
+
+  # The real-browser UI smokes actually RUN here (Chromium installed), one at a time so the
+  # subprocess+Chromium servers don't contend. Windows-first, since that's where users are.
+  ui-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Sync
+        run: uv sync --all-extras
+      - name: Install Chromium for Playwright
+        run: uv run playwright install chromium
+      - name: UI smoke tests (serial — they contend if interleaved; -o addopts= overrides the default deselect)
+        shell: bash
+        run: |
+          uv run pytest -o addopts= -q tests/test_retry_smoke.py
+          uv run pytest -o addopts= -q tests/test_vision_retry_smoke.py
+          uv run pytest -o addopts= -q tests/test_future_schema_smoke.py
