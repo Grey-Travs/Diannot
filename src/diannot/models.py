@@ -188,6 +188,9 @@ class Note(BaseModel):
     theme: str = "circulatory"
     pack: str = "study_notes"
     subject: Optional[str] = None
+    # Optional chapter/unit label. Powers the banner eyebrow ("SUBJECT · Chapter N"); default None so
+    # old notes stay byte-identical (omitted on save via exclude_none) and older builds keep reading them.
+    chapter: Optional[str] = None
     source: Optional[str] = None  # source file this note was ingested from
     # "flow" = the signature auto-styled two-column note (default). "canvas" = free positioning,
     # where each block carries an absolute :class:`Box`. Old notes lack this field -> "flow".

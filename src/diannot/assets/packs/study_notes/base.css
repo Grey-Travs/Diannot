@@ -82,33 +82,55 @@ body {
   }
 }
 
-/* A run of Left (col1) / Right (col2) blocks flows as two independent columns of topic cards. */
-.cols { display: flex; gap: 20px; align-items: flex-start; margin: 0 0 22px; }
-.cols > .col { flex: 1 1 0; min-width: 0; }
-.cols > .col > *:not(.script-h):not(.subhead) {
+/* Two-up topic cards: a FIXED 2-column grid; each column IS one bordered card with a top
+   accent rule and its heading (a dot + title) sitting inside — matches the mockup. */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; margin: 0 0 22px; }
+.cols > .col {
+  min-width: 0;
   background: var(--paper);
   border: 1px solid var(--rule);
   border-top: 3px solid var(--c-accent);
-  border-radius: 12px;
-  padding: 15px 19px;
-  margin: 0 0 14px;
+  border-radius: 13px;
+  padding: 16px 20px 18px;
   box-shadow: 0 1px 5px rgba(40, 33, 55, .05);
   break-inside: avoid;
 }
 .cols > .col > *:last-child { margin-bottom: 0; }
-.cols > .col > .script-h { font-size: 26px; margin: 2px 0 6px; }
+.cols > .col > .subhead {
+  position: relative;
+  padding-left: 17px;
+  color: var(--ink);
+  font-size: 16px;
+  margin: 0 0 9px;
+}
+.cols > .col > .subhead::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .42em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-accent);
+}
+.cols > .col > .script-h { font-size: 24px; margin: 0 0 8px; }
 .cols > .col > .script-h::after { display: none; }
-.cols > .col > .subhead { margin: 4px 0 6px; }
-/* A card's first list item reads as its heading (no marker, flush left). */
-.cols > .col > .list-wrap { margin: 0; }
-.cols > .col > .list-wrap > ul.list > li:first-child,
-.cols > .col > .list-wrap > ol.list > li:first-child { padding-left: 0; margin-bottom: 4px; }
-.cols > .col > .list-wrap > ul.list > li:first-child::before { content: none; }
+.cols > .col > .body { color: var(--ink-soft); font-size: 14.5px; }
+.cols > .col > .list-wrap { margin: 6px 0 0; }
 
 /* ---- Banner (poster header) — colored fill + darker stroke = the signature look ---- */
 .banner { grid-column: 1 / -1; text-align: left; margin: 0 0 30px; break-after: avoid; }
 .banner-imgs { display: flex; gap: 8px; margin-bottom: 8px; }
 .banner-imgs img { height: 58px; object-fit: contain; }
+.banner-eyebrow {
+  font-family: var(--f-head);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--c-accent);
+  margin: 0 0 10px;
+}
 .banner h1 {
   font-family: var(--f-banner);
   font-weight: 800;
@@ -343,6 +365,21 @@ blockquote.quote cite {
   color: var(--faint);
   margin-top: 8px;
 }
+
+/* ---- Note footer (subject-driven; omitted when a note has no subject) ---- */
+.note-foot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 38px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+  font-size: 12.5px;
+  color: var(--faint);
+}
+.note-foot-l { display: flex; align-items: center; gap: 8px; }
+.note-foot-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-accent); display: inline-block; }
 
 /* ---- Canvas mode: free positioning on a fixed A4 page (Note.layout_mode == "canvas") ---- */
 .canvas-page { position: relative; width: 210mm; height: 297mm; margin: 0 auto;

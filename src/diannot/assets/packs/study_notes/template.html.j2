@@ -6,12 +6,13 @@
 {% endfor %}
 </{{ 'ol' if ordered else 'ul' }}>
 {% endmacro %}
-{% macro render_block(b) %}
+{% macro render_block(b, note=none) %}
 {% set _lay = {'col1': 'lay-col1', 'col2': 'lay-col2', 'full': 'lay-full'}.get(b.layout, '') %}
 {% set cls = (_lay ~ ' ' ~ ('flag-' ~ b.confidence if b.confidence in ['low', 'medium'] else '')) | trim %}
 {% if b.type == 'banner' %}
   <header class="banner {{ cls }}">
     {% if b.images %}<div class="banner-imgs">{% for im in b.images %}<img src="{{ im }}" alt="">{% endfor %}</div>{% endif %}
+    {% if note and note.subject %}<div class="banner-eyebrow">{{ note.subject }}{% if note.chapter %} &middot; Chapter {{ note.chapter }}{% endif %}</div>{% endif %}
     <h1>{{ b.text }}</h1>
     {% if b.subtitle %}<p class="banner-sub">{{ b.subtitle }}</p>{% endif %}
   </header>
@@ -97,12 +98,13 @@
 {% if note.layout_mode == 'canvas' %}
 <main class="canvas-page">
 {% for b in note.blocks %}
-  <div class="canvas-item"{% if b.box %} style="left:{{ b.box.x }}%;top:{{ b.box.y }}%;width:{{ b.box.w }}%;min-height:{{ b.box.h }}%;z-index:{{ b.box.z }}"{% endif %}>{{ render_block(b) }}</div>
+  <div class="canvas-item"{% if b.box %} style="left:{{ b.box.x }}%;top:{{ b.box.y }}%;width:{{ b.box.w }}%;min-height:{{ b.box.h }}%;z-index:{{ b.box.z }}"{% endif %}>{{ render_block(b, note) }}</div>
 {% endfor %}
 </main>
 {% else %}
 <main class="page">
-{% for g in groups %}{% if g[0] == 'full' %}{{ render_block(g[1]) }}{% else %}<div class="cols"><div class="col">{% for b in g[1] %}{{ render_block(b) }}{% endfor %}</div><div class="col">{% for b in g[2] %}{{ render_block(b) }}{% endfor %}</div></div>{% endif %}{% endfor %}
+{% for g in groups %}{% if g[0] == 'full' %}{{ render_block(g[1], note) }}{% else %}<div class="cols"><div class="col">{% for b in g[1] %}{{ render_block(b, note) }}{% endfor %}</div><div class="col">{% for b in g[2] %}{{ render_block(b, note) }}{% endfor %}</div></div>{% endif %}{% endfor %}
+{% if note.subject %}<footer class="note-foot"><span class="note-foot-l"><span class="note-foot-dot"></span>Diannot &middot; {{ note.subject }}</span></footer>{% endif %}
 </main>
 {% endif %}
 {% if enable_mermaid %}{{ mermaid_html | safe }}{% endif %}

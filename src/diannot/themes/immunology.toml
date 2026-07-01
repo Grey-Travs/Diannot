@@ -1,0 +1,26 @@
+# Immunology — subject purple. Values are the exact --t-* quartet from the approved
+# mockup (design-tokens.md), so a note in this theme matches Diannot Note.html pixel-for-pixel.
+name = "Immunology"
+
+[colors]
+primary = "#7C57C2"        # --t-strong  (script/sub headings, banner fill, table head, key-point)
+primary_dark = "#553A8C"   # --t-deep    (banner stroke, key terms, bold)
+accent = "#9070D2"         # --t-mid     (dots, rules, list markers, eyebrow)
+accent_soft = "#F2ECFB"    # --t-soft    (soft fills, key-point bg, dot halo)
+ink = "#2A2535"
+page = "#FFFDF9"
+
+banner_fill = "#7C57C2"
+banner_stroke = "#553A8C"
+banner_shadow = "#9070D2"
+
+table_head_bg = "#7C57C2"
+table_head_ink = "#FFFFFF"
+table_zebra = "#F4EFE7"
+
+callout_tip_bg = "#EAF4EE"
+callout_tip_border = "#3E9268"
+callout_key_bg = "#F2ECFB"
+callout_key_border = "#7C57C2"
+callout_warn_bg = "#FAF1DD"
+callout_warn_border = "#C0892E"
