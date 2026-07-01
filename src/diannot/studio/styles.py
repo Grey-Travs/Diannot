@@ -20,32 +20,46 @@ _FONTS = (
 )
 
 _CSS = """
-:root{
-  --dn-v:#6B4B90; --dn-vd:#57357D; --dn-vt:#EFEAF5; --dn-coral:#E7799B;
-  --dn-ink:#2C2640; --dn-muted:#8B8598; --dn-line:#ECEAF1; --dn-bg:#F6F4FA;
-  --dn-shadow:0 8px 24px rgba(70,45,110,.08);
+/* Phase 03 shell tokens: calm indigo-ink + warm paper so the colorful notes pop.
+   One token structure, re-skinned for light + dark (design/Diannot Shell.html). */
+:root, .body--light{
+  --dn-primary:#3B3A5A; --dn-primary-soft:#ECEBF4; --dn-on-primary:#FFFFFF;
+  --dn-page:#FAF8F5; --dn-card:#FFFFFF; --dn-sunken:#F1EDE7;
+  --dn-hairline:#ECE7E0; --dn-ink:#262335; --dn-muted:#6E6A7C; --dn-faint:#9A96A6;
+  --dn-shadow:0 2px 10px rgba(38,35,53,.07), 0 1px 2px rgba(38,35,53,.04);
+  --dn-radius-card:14px; --dn-radius-control:10px;
 }
-/* soft app background + base typography */
-body, .q-page-container, .nicegui-content{ background:var(--dn-bg); }
+.body--dark{
+  --dn-primary:#A7A4E0; --dn-primary-soft:#26252F; --dn-on-primary:#16161D;
+  --dn-page:#16161D; --dn-card:#1E1E27; --dn-sunken:#121218;
+  --dn-hairline:#2A2A35; --dn-ink:#E9E7F2; --dn-muted:#A6A2B8; --dn-faint:#9A96A6;
+  --dn-shadow:0 2px 10px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.3);
+  --q-primary:#A7A4E0 !important;  /* a lighter indigo reads better on the dark page */
+}
+/* warm paper app background + base typography */
+body, .q-page-container, .nicegui-content{ background:var(--dn-page); }
 body{ font-family:'Nunito Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; color:var(--dn-ink); }
 .text-h4,.text-h5,.text-h6,.text-subtitle1,.text-subtitle2,.dn-title{
   font-family:'Poppins', sans-serif; color:var(--dn-ink);
 }
-/* soft cards everywhere (matches Home) */
-.q-card{ border-radius:16px; box-shadow:var(--dn-shadow); border:1px solid #F0EEF5; }
+/* calm light header (a hairline-bordered surface, not a saturated brand bar) */
+.q-header{ background:var(--dn-card); color:var(--dn-ink); box-shadow:none; border-bottom:1px solid var(--dn-hairline); }
+.dn-brand{ color:var(--dn-primary); }
+/* left drawer: warm surface, hairline separator, rounded nav items */
+.q-drawer{ background:var(--dn-page); color:var(--dn-ink); }
+.q-drawer.q-drawer--bordered{ border-right:1px solid var(--dn-hairline); }
+.q-drawer .q-btn{ border-radius:10px; }
+/* soft cards everywhere */
+.q-card{ background:var(--dn-card); border-radius:var(--dn-radius-card); box-shadow:var(--dn-shadow); border:1px solid var(--dn-hairline); }
 /* keep the editor's dense block rows flat (a big shadow per row is too heavy) */
-.blockrow.q-card{ box-shadow:none; border:1px solid var(--dn-line); }
-/* left-drawer nav: rounded items */
-.q-drawer .q-btn{ border-radius:12px; }
-/* tabs accent in brand violet; let panels blend with the soft background */
-.q-tab--active{ color:var(--dn-vd); }
+.blockrow.q-card{ box-shadow:none; border:1px solid var(--dn-hairline); }
+/* tabs accent in the brand indigo; let panels blend with the paper background */
+.q-tab--active{ color:var(--dn-primary); }
 .q-tab-panels{ background:transparent; }
-/* reusable section header used across pages */
+/* controls a touch rounder */
+.q-field--outlined .q-field__control{ border-radius:var(--dn-radius-control); }
+/* reusable section width cap used across pages */
 .dn-page{ max-width:1180px; width:100%; }
-/* dark mode: deepen background + cards */
-.body--dark, .body--dark .q-page-container, .body--dark .nicegui-content{ background:#1b1730; }
-.body--dark .q-card{ background:#262138; border-color:#332b4d; }
-.body--dark .blockrow.q-card{ background:#241f38; }
 """
 
 

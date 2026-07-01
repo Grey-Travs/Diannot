@@ -35,48 +35,45 @@ _FALLBACK = {"primary": "#6B4B90", "primary_dark": "#57357D", "accent_soft": "#E
 _THEME_CACHE: dict[str, dict] = {}
 
 _HOME_CSS = """
-.dn-main{--v:#6B4B90;--vd:#57357D;--vt:#EFEAF5;--coral:#E7799B;--ink:#2C2640;--muted:#8B8598;
-  --line:#ECEAF1;--shadow:0 8px 24px rgba(70,45,110,.08);max-width:1180px;width:100%;padding:6px 8px 40px;display:flex;flex-direction:column;gap:18px}
-.dn-hero{position:relative;overflow:hidden;border-radius:22px;padding:24px 30px;color:#fff;
-  background:linear-gradient(120deg,#6B4B90 0%,#8a5bb0 50%,#E7799B 115%);box-shadow:var(--shadow)}
+.dn-main{--v:#3B3A5A;--vd:#2E2D49;--vt:#ECEBF4;--coral:#B3789B;--ink:#262335;--muted:#6E6A7C;
+  --line:#ECE7E0;--card:#fff;--shadow:0 2px 10px rgba(38,35,53,.07),0 1px 2px rgba(38,35,53,.04);max-width:1180px;width:100%;padding:6px 8px 40px;display:flex;flex-direction:column;gap:18px}
+.dn-hero{position:relative;overflow:hidden;border-radius:20px;padding:24px 30px;color:#fff;
+  background:linear-gradient(120deg,#34334F 0%,#45436A 58%,#5A5688 120%);box-shadow:var(--shadow)}
 .dn-hero .h{font-family:'Baloo 2','Poppins',sans-serif;font-weight:800;font-size:27px;margin-bottom:4px}
 .dn-hero .p{opacity:.94;font-size:14.5px;margin-bottom:16px}
-.dn-blob{position:absolute;right:-40px;top:-60px;width:210px;height:210px;border-radius:50%;background:rgba(255,255,255,.12)}
-.dn-blob2{position:absolute;right:130px;bottom:-90px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.10)}
+.dn-blob{position:absolute;right:-40px;top:-60px;width:210px;height:210px;border-radius:50%;background:rgba(255,255,255,.10)}
+.dn-blob2{position:absolute;right:130px;bottom:-90px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.08)}
 .dn-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
-.dn-stat{background:#fff;border-radius:16px;box-shadow:var(--shadow);border:1px solid #F0EEF5;padding:14px 16px;display:flex;align-items:center;gap:13px}
+.dn-stat{background:var(--card);border-radius:14px;box-shadow:var(--shadow);border:1px solid var(--line);padding:14px 16px;display:flex;align-items:center;gap:13px}
 .dn-stat .ico{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;color:#fff;flex:none}
 .dn-stat .num{font-family:'Poppins',sans-serif;font-weight:700;font-size:21px;line-height:1;color:var(--ink)}
 .dn-stat .lbl{color:var(--muted);font-size:12.5px;font-weight:600;margin-top:3px}
 .dn-eyebrow{font-family:'Poppins',sans-serif;font-weight:700;font-size:11.5px;letter-spacing:1.3px;text-transform:uppercase;color:var(--coral);margin:6px 2px -6px}
-.dn-feature{display:flex;background:#fff;border-radius:20px;overflow:hidden;box-shadow:var(--shadow);border:1px solid #F0EEF5}
+.dn-feature{display:flex;background:var(--card);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line)}
 .dn-feature .spine{width:10px;flex:none}
 .dn-feature .fb{padding:22px 26px;flex:1}
 .dn-feature .ft{font-family:'Baloo 2','Poppins',sans-serif;font-weight:800;font-size:25px;margin-bottom:6px;color:var(--ink)}
 .dn-feature .fm{color:var(--muted);font-size:13.5px;margin-bottom:13px}
-.dn-feature .fx{color:#6a6478;font-size:14px;line-height:1.5;max-width:560px;margin-bottom:16px}
+.dn-feature .fx{color:var(--muted);font-size:14px;line-height:1.5;max-width:560px;margin-bottom:16px}
 .dn-sec{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
 .dn-sec .t{font-family:'Poppins',sans-serif;font-weight:700;font-size:20px;color:var(--ink)}
 .dn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(236px,1fr));gap:18px}
-.dn-card{background:#fff;border-radius:18px;box-shadow:var(--shadow);overflow:hidden;border:1px solid #F0EEF5;
+.dn-card{background:var(--card);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;border:1px solid var(--line);
   transition:transform .15s,box-shadow .15s;display:flex;flex-direction:column}
-.dn-card:hover{transform:translateY(-4px);box-shadow:0 16px 32px rgba(70,45,110,.15)}
+.dn-card:hover{transform:translateY(-4px);box-shadow:0 16px 34px rgba(38,35,53,.14)}
 .dn-card .strip{height:7px;flex:none}
 .dn-card .cb{padding:15px 16px 4px}
 .dn-card .ct{font-family:'Poppins',sans-serif;font-weight:600;font-size:16px;color:var(--ink);margin-bottom:8px}
 .dn-chip{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 11px;border-radius:999px}
 .dn-cmeta{display:flex;gap:11px;color:var(--muted);font-size:12px;margin:11px 0 2px}
-.dn-cmeta b{color:#5e5870}
-.dn-newtile{border:2px dashed #d6cfe6;background:#FBFAFD;border-radius:18px;display:flex;flex-direction:column;
+.dn-cmeta b{color:var(--ink)}
+.dn-newtile{border:2px dashed #D8D0C4;background:#FBF9F5;border-radius:16px;display:flex;flex-direction:column;
   align-items:center;justify-content:center;color:var(--vd);font-family:'Poppins',sans-serif;font-weight:600;
   font-size:14px;cursor:pointer;min-height:150px;transition:background .15s,border-color .15s}
-.dn-newtile:hover{background:#F4F0FA;border-color:var(--v)}
-/* dark mode: flip the custom Home surfaces (the hero gradient already reads fine) */
-.body--dark .dn-main{--ink:#ECEAF1;--muted:#a39db4;--line:#332b4d}
-.body--dark .dn-stat,.body--dark .dn-feature,.body--dark .dn-card{background:#262138;border-color:#332b4d}
-.body--dark .dn-feature .fx{color:#b9b3c6}
-.body--dark .dn-feature .fm,.body--dark .dn-cmeta b{color:#cfc8dc}
-.body--dark .dn-newtile{background:#241f38;border-color:#4a4068;color:#cbb8e6}
+.dn-newtile:hover{background:#F4F0EA;border-color:var(--v)}
+/* dark mode: flip the custom Home surfaces to the design's dark palette */
+.body--dark .dn-main{--ink:#E9E7F2;--muted:#A6A2B8;--line:#2A2A35;--card:#1E1E27;--vd:#A7A4E0}
+.body--dark .dn-newtile{background:#121218;border-color:#3A3A47;color:#A7A4E0}
 """
 
 
@@ -308,13 +305,13 @@ def home_page() -> None:
 
         # ---- stat chips ----
         with ui.element("div").classes("dn-stats"):
-            _stat("description", len(notes), "Notes", "#6B4B90")
+            _stat("description", len(notes), "Notes", "#3B3A5A")
             if STUDY_ENABLED:
-                _stat("schedule", total_due, "Cards due", "#E7799B")
+                _stat("schedule", total_due, "Cards due", "#B3789B")
                 _stat("style", n_decks, "Decks", "#1E9E8F")
                 _stat("quiz", n_quiz, "Quizzes", "#5B6CC0")
             else:
-                _stat("label", sum(r[4] for r in rows), "Key terms", "#E7799B")
+                _stat("label", sum(r[4] for r in rows), "Key terms", "#B3789B")
 
         # ---- continue where you left off ----
         if continue_row:
@@ -362,7 +359,7 @@ def home_page() -> None:
                 for path, note, cards, due, terms in rows:
                     _note_card(path, note, cards, due, terms, _theme_colors(note.theme, themes_dir))
                 with ui.element("div").classes("dn-newtile").on("click", lambda: workspace and _new_note(workspace)):
-                    ui.icon("note_add").style("font-size:30px;color:#6B4B90;margin-bottom:8px")
+                    ui.icon("note_add").style("font-size:30px;color:#3B3A5A;margin-bottom:8px")
                     ui.label("New blank note")
 
     # ---- self-update (installed build only): check GitHub Releases, offer a one-click update ----

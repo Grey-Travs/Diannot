@@ -29,7 +29,9 @@ def studio_layout(active: str = "") -> None:
     # App-wide brand colors (violet primary + soft coral-pink accent) and remembered
     # dark/light mode (a Settings switch binds to the same storage key).
     app.storage.general.setdefault("dark", False)
-    ui.colors(primary="#6B4B90", secondary="#E7799B", accent="#E7799B")
+    # Calm indigo-ink brand (Phase 03 shell redesign); a lighter indigo is swapped in for
+    # dark mode via CSS (--q-primary in styles.py). Secondary/accent stay a warm rose.
+    ui.colors(primary="#3B3A5A", secondary="#B3789B", accent="#B3789B")
     ui.dark_mode().bind_value(app.storage.general, "dark")
     inject_global()  # shared fonts + soft background + card styling, app-wide
     # behavior=desktop keeps the drawer pinned (Quasar otherwise auto-hides it on narrow
@@ -45,6 +47,6 @@ def studio_layout(active: str = "") -> None:
                 btn.props("color=primary")
     with ui.header().classes("items-center justify-between"):
         with ui.row().classes("items-center gap-2"):
-            ui.button(icon="menu", on_click=drawer.toggle).props("flat round dense color=white")
-            ui.icon("menu_book").classes("text-2xl")
+            ui.button(icon="menu", on_click=drawer.toggle).props("flat round dense")
+            ui.icon("menu_book").classes("text-2xl dn-brand")
             ui.label("Diannot Studio").classes("text-h6")
