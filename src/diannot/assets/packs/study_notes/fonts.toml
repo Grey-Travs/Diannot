@@ -1,10 +1,11 @@
 # Fonts for the study_notes pack (all SIL OFL). Paths are relative to assets/fonts/.
+# Caveat = script section headings; Poppins = banner/headings/terms; Nunito Sans = body.
 
 [[face]]
-family = "Sacramento"
-weight = 400
+family = "Caveat"
+weight = 700
 style = "normal"
-file = "Sacramento/Sacramento-400.woff2"
+file = "Caveat/Caveat-700.woff2"
 
 [[face]]
 family = "Poppins"
@@ -23,6 +24,12 @@ family = "Poppins"
 weight = 700
 style = "normal"
 file = "Poppins/Poppins-700.woff2"
+
+[[face]]
+family = "Poppins"
+weight = 800
+style = "normal"
+file = "Poppins/Poppins-800.woff2"
 
 [[face]]
 family = "Nunito Sans"
@@ -47,21 +54,3 @@ family = "Nunito Sans"
 weight = 700
 style = "normal"
 file = "NunitoSans/NunitoSans-700.woff2"
-
-[[face]]
-family = "Baloo 2"
-weight = 600
-style = "normal"
-file = "Baloo2/Baloo2-600.woff2"
-
-[[face]]
-family = "Baloo 2"
-weight = 700
-style = "normal"
-file = "Baloo2/Baloo2-700.woff2"
-
-[[face]]
-family = "Baloo 2"
-weight = 800
-style = "normal"
-file = "Baloo2/Baloo2-800.woff2"

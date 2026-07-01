@@ -25,7 +25,7 @@ def test_column_blocks_render_as_themed_topic_cards():
     h = render_note_html(n)
     assert '<div class="cols">' in h          # two-column section
     assert ".cols > .col > *" in h            # the topic-card CSS is present
-    assert "var(--c-key-bg)" in h             # cards use the theme's colored-box vars
+    assert "border-top: 3px solid var(--c-accent)" in h  # cards carry a theme-colored accent top rule
 
 
 def test_layout_groups_partitions_runs_and_breaks_on_full():

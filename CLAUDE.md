@@ -36,28 +36,36 @@ system below is encoded faithfully from those pages.
 ## The design system (the backbone)
 
 ### Layout
-Two-column by default (CSS multi-column: `column-count: 2`). Per-block layout override:
-`auto` (flow), `full` (`column-span: all`), or `col1`/`col2` (specific column). All four are
-implemented — the editor's Left/Right control pins blocks to `col1`/`col2` (rendered side by side).
-Tidy, "aesthetic handwritten study-notes" feel.
+A single-column reading **flow** by default: the sheet is a 2-col CSS grid, but every block
+spans both columns (`grid-column: 1 / -1`) unless pinned. Per-block layout override: `auto`
+(flow), `full` (full width), or `col1`/`col2` — a run of `col1`/`col2` blocks folds into one
+`.cols` flex section whose two columns flow independently (rendered as side-by-side topic
+cards). The editor's Left/Right control pins blocks to `col1`/`col2`. (The old `column-count`
+multi-column engine was removed.) Tidy, "aesthetic handwritten study-notes" feel.
 
 ### Fonts (licensable Google Fonts as stand-ins for the proprietary originals)
 All four are **SIL Open Font License (OFL)** → safe to bundle locally for offline rendering.
 
+Fonts are **per-pack** (declared in each pack's `fonts.toml`). The default `study_notes`
+pack (Phase 03 redesign) uses:
+
 | Role | Font | Where |
 |---|---|---|
-| Script / handwritten — major section titles | **Sacramento** (elegant cursive; brief suggested Caveat/Pacifico — swappable per pack) | `.script-h` |
-| Heavy bold sans — sub-headings & key terms | **Poppins** (600/700) | `.subhead`, `.term` |
-| Clean regular sans — body text | **Nunito Sans** | `.body` and base |
-| Chunky outlined display — chapter banners | **Baloo 2** (800) | `.banner h1` |
+| Script / handwritten — major section titles | **Caveat** (700) | `.script-h` |
+| Heavy bold sans — sub-headings, key terms & banner | **Poppins** (500/600/700/800) | `.subhead`, `.term`, `.banner h1` |
+| Clean regular sans — body text | **Nunito Sans** (400/600/700) | `.body` and base |
+
+(Sacramento + Baloo 2 remain vendored for other packs; all are OFL and swappable per pack.)
 
 Vendored locally as OFL `woff2` (latin subset) under `src/diannot/assets/fonts/` and
 declared per-pack in `fonts.toml`. The renderer base64-embeds them into the note's
 `<style>`, so output HTML/PDF is fully self-contained and offline. The Google Fonts CDN
 `@import` remains only as an automatic fallback if a font file is missing.
 
-Banner poster effect = `-webkit-text-stroke` (outline) + `text-shadow` (drop shadow) +
-`paint-order: stroke fill`. This is why we render PDFs with Chromium.
+Banner poster effect = `-webkit-text-stroke` (a darker-tint outline over a theme-colored
+fill) + `text-shadow` (soft drop shadow) + `paint-order: stroke fill`. This is why we render
+PDFs with Chromium. In `study_notes` the note sits on **warm off-white paper** (a floating
+rounded sheet on a warm canvas on screen; the paper fills the page in print/PDF).
 
 ### Block types (Pydantic models — see `src/diannot/models.py`)
 `banner`, `script_heading`, `subheading`, `body`, `term_definition`,

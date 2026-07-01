@@ -1,187 +1,352 @@
-/* study_notes pack — light, playful "aesthetic study-notes" look.
-   Colors come from the active theme via CSS variables (see template head). */
+/* study_notes pack — refined "aesthetic study-notes" look (Phase 03 redesign).
+   Per-subject color comes from the active theme via the injected --c-* variables
+   (see template head). The warm neutral "paper" system + the semantic tip/warn
+   callout colors are pack constants below, held CONSTANT across all 9 themes so the
+   colourful accents are what change and pop.
+
+   Theme tint scale (from the theme TOML, injected as --c-*):
+     --c-primary       strong  — banner fill, table head, key-point, script rule origin
+     --c-primary-dark  deep    — banner stroke, script headings, key terms, bold
+     --c-accent        mid     — dots, rules, list markers, gradient, quote bar
+     --c-accent-soft   soft    — soft fills, dot halo, key-point fill, quote glyph
+     --c-thead-ink     on      — text/icon on a theme-coloured fill (white) */
 
 :root {
-  --f-script: 'Sacramento', cursive;
-  --f-banner: 'Baloo 2', system-ui, sans-serif;
+  --f-script: 'Caveat', cursive;
+  --f-banner: 'Poppins', system-ui, sans-serif;
   --f-head: 'Poppins', system-ui, sans-serif;
   --f-body: 'Nunito Sans', system-ui, sans-serif;
+
+  /* Warm neutral paper system (constant across every theme). */
+  --paper: #FFFDF9;
+  --canvas: #F1ECE3;
+  --ink: #2A2535;
+  --ink-soft: #5C5668;
+  --faint: #8C8799;
+  --rule: #EBE5DB;
+  --rule-soft: #F4EFE7;
+  --sheet-shadow: 0 22px 60px rgba(40, 33, 55, .13), 0 4px 14px rgba(40, 33, 55, .06);
+  --banner-shadow: rgba(40, 33, 55, .13);
+
+  /* Semantic callouts: tip = green, warning = amber (key-point uses the theme accent). */
+  --tip-bar: #3E9268;  --tip-fill: #EAF4EE;  --tip-ink: #2A6547;
+  --warn-bar: #C0892E; --warn-fill: #FAF1DD; --warn-ink: #7E5A14;
 }
 
 * { box-sizing: border-box; }
-@page { size: A4; margin: 12mm 11mm; }
+@page { size: A4; margin: 13mm 12mm; }
 html, body { margin: 0; padding: 0; }
 
 body {
   font-family: var(--f-body);
-  color: var(--c-ink);
-  background: var(--c-page);
-  font-size: 11px;
-  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 14px;
+  line-height: 1.62;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
+/* The note sheet. A 2-col grid is the mechanism, but every block spans BOTH columns by
+   default (single-column reading flow); only an explicit col1/col2 run goes side-by-side
+   as a `.cols` section — so a shorter side never leaves a gap. */
 .page {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 26px;
+  gap: 20px;
   align-content: start;
-  max-width: 920px;
+  max-width: 860px;
   margin: 0 auto;
-  padding: 8px 4px;
+  padding: 4px 2px;
 }
+.page > * { grid-column: 1 / -1; }
+.lay-full, .full { grid-column: 1 / -1; }
 
-/* On screen, present the note as a centered white sheet. */
+/* On screen (editor preview + PNG export): float the paper as a rounded card on the warm
+   canvas, with the signature gradient top strip. Print/PDF keeps the paper filling the page. */
 @media screen {
-  body { padding: 20px; background: #ececec; }
+  body { background: var(--canvas); padding: 44px 24px; }
   .page {
-    background: var(--c-page);
-    padding: 28px 26px;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, .15);
-    border-radius: 4px;
+    max-width: 900px;
+    padding: 50px 58px 54px;
+    gap: 22px;
+    background-color: var(--paper);
+    background-image: linear-gradient(90deg, var(--c-primary), var(--c-accent));
+    background-repeat: no-repeat;
+    background-size: 100% 7px;
+    background-position: top;
+    background-origin: border-box;
+    border-radius: 18px;
+    box-shadow: var(--sheet-shadow);
+    overflow: hidden;
   }
 }
 
-/* Default: every block spans full width. A run of Left (col1) / Right (col2) blocks is wrapped in
-   a .cols section whose two columns flow INDEPENDENTLY — so a shorter side doesn't leave a gap. */
-.page > * { grid-column: 1 / -1; }
-.lay-full, .full { grid-column: 1 / -1; }
-.cols { display: flex; gap: 22px; align-items: flex-start; }
+/* A run of Left (col1) / Right (col2) blocks flows as two independent columns of topic cards. */
+.cols { display: flex; gap: 20px; align-items: flex-start; margin: 0 0 22px; }
 .cols > .col { flex: 1 1 0; min-width: 0; }
-/* Each CONTENT block in a column is a themed "topic card" box; a section heading stays an
-   unboxed cursive title sitting above its card(s). */
-.cols > .col > *:not(.script-h):not(.subhead) { background: var(--c-key-bg);
-  border: 1.5px solid var(--c-key-border); border-radius: 10px; padding: 9px 12px; margin: 0 0 12px;
-  box-shadow: 0 1px 5px rgba(0, 0, 0, .06); break-inside: avoid; }
+.cols > .col > *:not(.script-h):not(.subhead) {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--c-accent);
+  border-radius: 12px;
+  padding: 15px 19px;
+  margin: 0 0 14px;
+  box-shadow: 0 1px 5px rgba(40, 33, 55, .05);
+  break-inside: avoid;
+}
 .cols > .col > *:last-child { margin-bottom: 0; }
-/* The topic title above a column's card(s), sized for the half-width column. */
-.cols > .col > .script-h { font-size: 25px; margin: 2px 0 6px; }
-.cols > .col > .subhead { margin: 4px 0 4px; }
-/* A card's first list item reads as its heading (no bullet, flush left). */
+.cols > .col > .script-h { font-size: 26px; margin: 2px 0 6px; }
+.cols > .col > .script-h::after { display: none; }
+.cols > .col > .subhead { margin: 4px 0 6px; }
+/* A card's first list item reads as its heading (no marker, flush left). */
 .cols > .col > .list-wrap { margin: 0; }
 .cols > .col > .list-wrap > ul.list > li:first-child,
 .cols > .col > .list-wrap > ol.list > li:first-child { padding-left: 0; margin-bottom: 4px; }
 .cols > .col > .list-wrap > ul.list > li:first-child::before { content: none; }
 
-/* ---- Banner (poster header) ---- */
-.banner { grid-column: 1 / -1; text-align: center; margin: 0 0 16px; break-after: avoid; }
-.banner-imgs { display: flex; justify-content: center; gap: 8px; margin-bottom: 4px; }
-.banner-imgs img { height: 66px; object-fit: contain; }
+/* ---- Banner (poster header) — colored fill + darker stroke = the signature look ---- */
+.banner { grid-column: 1 / -1; text-align: left; margin: 0 0 30px; break-after: avoid; }
+.banner-imgs { display: flex; gap: 8px; margin-bottom: 8px; }
+.banner-imgs img { height: 58px; object-fit: contain; }
 .banner h1 {
   font-family: var(--f-banner);
   font-weight: 800;
-  font-size: 42px;
-  line-height: 1.05;
+  font-size: 56px;
+  line-height: 1.02;
+  letter-spacing: -.022em;
   margin: 0;
-  color: var(--c-banner-fill);
-  -webkit-text-stroke: 2.2px var(--c-banner-stroke);
+  color: var(--c-primary);
+  -webkit-text-stroke: 1px var(--c-primary-dark);
   paint-order: stroke fill;
-  text-shadow: 3px 3px 0 var(--c-banner-shadow);
-  letter-spacing: .5px;
+  text-shadow: 0 10px 26px var(--banner-shadow);
 }
-.banner-sub { font-family: var(--f-head); font-weight: 600; color: var(--c-primary); margin: 3px 0 0; font-size: 12px; }
+.banner-sub {
+  font-family: var(--f-head);
+  font-weight: 500;
+  color: var(--ink-soft);
+  margin: 13px 0 0;
+  font-size: 16px;
+}
 
-/* ---- Script section headings ---- */
+/* ---- Script section headings (cursive, with a short accent rule beneath) ---- */
 .script-h {
   font-family: var(--f-script);
-  color: var(--c-primary);
-  font-weight: 400;
-  font-size: 34px;
+  color: var(--c-primary-dark);
+  font-weight: 700;
+  font-size: 40px;
   line-height: 1;
-  margin: 16px 0 4px;
+  margin: 26px 0 0;
   break-after: avoid;
+}
+.script-h::after {
+  content: "";
+  display: block;
+  width: 54px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--c-accent);
+  margin-top: 7px;
 }
 
 /* ---- Sub-headings ---- */
 .subhead {
   font-family: var(--f-head);
-  font-weight: 700;
-  color: var(--c-primary);
-  font-size: 12.5px;
-  margin: 11px 0 2px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  font-size: 14px;
+  margin: 14px 0 10px;
   break-after: avoid;
 }
-.subhead.caps { text-transform: uppercase; letter-spacing: .4px; font-size: 11.5px; }
+.subhead.caps {
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  font-size: 11.5px;
+  color: var(--c-accent);
+}
 
 /* ---- Body ---- */
-.body { margin: 4px 0; text-align: justify; }
-.body strong, .termdef strong, .tbl strong, .callout strong { font-weight: 700; color: var(--c-primary-dark); }
+.body { margin: 0 0 16px; }
+.body strong, .termdef strong, .tbl strong, .callout strong, .cols strong {
+  font-weight: 700;
+  color: var(--c-primary-dark);
+}
 
-/* ---- Term — definition ---- */
-.termdef { margin: 3px 0; break-inside: avoid; }
-.termdef .term { font-family: var(--f-head); font-weight: 700; color: var(--c-primary); }
-.termdef .dash { color: var(--c-accent); }
+/* ---- Term — definition (a colored dot is a non-color-only cue) ---- */
+.termdef {
+  position: relative;
+  margin: 0 0 13px;
+  padding-left: 23px;
+  line-height: 1.58;
+  break-inside: avoid;
+}
+.termdef::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .52em;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--c-accent);
+  box-shadow: 0 0 0 4px var(--c-accent-soft);
+}
+.termdef .term { font-family: var(--f-head); font-weight: 600; color: var(--c-primary-dark); }
+.termdef .dash { color: var(--faint); }
 
-/* ---- Lists ---- */
-.list-wrap { margin: 5px 0; }
-ul.list, ol.list { margin: 3px 0; padding-left: 18px; }
-ul.list li, ol.list li { margin: 2px 0; }
-ul.list { list-style: none; padding-left: 4px; }
-ul.list li { position: relative; padding-left: 14px; }
-ul.list li::before { content: "\2022"; color: var(--c-primary); position: absolute; left: 0; font-weight: 700; }
-ul.list ul.list li::before { content: "\25E6"; color: var(--c-accent); }
+/* ---- Lists (diamond markers for top level, in the theme accent) ---- */
+.list-wrap { margin: 0 0 16px; }
+ul.list, ol.list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+ul.list li, ol.list li { position: relative; padding-left: 21px; line-height: 1.5; }
+ul.list li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: .48em;
+  width: 8px;
+  height: 8px;
+  background: var(--c-accent);
+  transform: rotate(45deg);
+  border-radius: 1.5px;
+}
+ul.list ul.list li::before { width: 6px; height: 6px; opacity: .55; top: .5em; }
+ol.list { counter-reset: li; }
+ol.list li { counter-increment: li; }
+ol.list li::before {
+  content: counter(li) ".";
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: var(--f-head);
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--c-primary);
+}
 
-/* ---- Tables ---- */
-.table-wrap { margin: 9px 0; break-inside: avoid; overflow-x: auto; }
-/* table-layout:fixed + wrapping keeps a table INSIDE its column (it can't size to content and spill
-   over the neighbouring column); long cell text and words wrap instead of overflowing. */
-table.tbl { width: 100%; border-collapse: collapse; font-size: 9.6px; table-layout: fixed; }
-table.tbl th, table.tbl td { overflow-wrap: anywhere; word-break: break-word; }
+/* ---- Tables (rounded hairline box, theme header row, warm zebra) ---- */
+.table-wrap { margin: 0 0 22px; break-inside: avoid; }
+.tbl-box { border: 1px solid var(--rule); border-radius: 13px; overflow: hidden; }
+/* table-layout:fixed + wrapping keeps a table INSIDE its column and wraps long cell text. */
+table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 1.42; table-layout: fixed; }
+table.tbl th, table.tbl td { overflow-wrap: anywhere; word-break: break-word; text-align: left; padding: 11px 14px; }
 table.tbl th {
-  background: var(--c-thead-bg);
+  background: var(--c-primary);
   color: var(--c-thead-ink);
   font-family: var(--f-head);
   font-weight: 600;
-  text-align: left;
-  padding: 5px 7px;
+  font-size: 12px;
+  letter-spacing: .02em;
 }
-table.tbl td { padding: 4px 7px; border-bottom: 1px solid #e7e7e7; vertical-align: top; }
-table.tbl tbody tr:nth-child(even) td { background: var(--c-zebra); }
-figure figcaption { font-size: 9px; color: #777; font-style: italic; margin-top: 3px; text-align: center; }
+table.tbl td { border-top: 1px solid var(--rule); vertical-align: top; }
+table.tbl tbody tr:nth-child(even) td { background: var(--rule-soft); }
+figure figcaption { font-size: 12px; color: var(--faint); font-style: normal; margin-top: 9px; text-align: left; }
 
 /* ---- Images ---- */
-figure.img { margin: 9px 0; break-inside: avoid; text-align: center; }
-figure.img img { max-width: 100%; border-radius: 6px; }
-figcaption .credit { color: #aaa; font-style: italic; }
+figure.img { margin: 0 0 24px; break-inside: avoid; text-align: center; }
+figure.img img { max-width: 100%; border-radius: 12px; border: 1px solid var(--rule); }
+figcaption .credit { color: var(--faint); font-style: italic; }
 
-/* ---- Diagram placeholder (Mermaid rendering is a later phase) ---- */
-figure.diagram { margin: 9px 0; break-inside: avoid; }
-.mermaid { text-align: center; font-size: 9px; white-space: pre-wrap; color: #666; margin: 0; }
+/* ---- Diagram placeholder (rendered Mermaid replaces this) ---- */
+figure.diagram { margin: 0 0 24px; break-inside: avoid; }
+.mermaid {
+  text-align: center;
+  font-size: 12px;
+  white-space: pre-wrap;
+  color: var(--ink-soft);
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--rule-soft);
+}
 .mermaid svg { max-width: 100%; height: auto; }
 
-/* ---- Callouts ---- */
-.callout { break-inside: avoid; border-radius: 10px; padding: 9px 11px; margin: 10px 0; border: 1.5px solid; }
-.callout p { margin: 3px 0; }
-.callout ul { margin: 3px 0; padding-left: 16px; }
-.callout li { margin: 2px 0; }
-.callout-title { font-family: var(--f-head); font-weight: 700; font-size: 11px; margin-bottom: 3px; }
-.callout.tutor_tip { background: var(--c-tip-bg); border-color: var(--c-tip-border); }
-.callout.tutor_tip .callout-title { color: var(--c-primary-dark); }
-.callout.key_points { background: var(--c-key-bg); border-color: var(--c-key-border); }
-.callout.key_points .callout-title { color: var(--c-primary); }
-.callout.warning { background: var(--c-warn-bg); border-color: var(--c-warn-border); }
-.callout.warning .callout-title { color: #9a6b00; }
+/* ---- Callouts (icon chip + soft fill + colored left bar; variant reads without color alone) ---- */
+.callout {
+  display: flex;
+  gap: 14px;
+  break-inside: avoid;
+  padding: 15px 17px;
+  margin: 0 0 14px;
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--rule);
+  border-radius: 11px;
+}
+.callout-ico {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+.callout-ico svg { width: 17px; height: 17px; }
+.callout-body { font-size: 14px; line-height: 1.55; }
+.callout-body p { margin: 3px 0 0; }
+.callout-body p:first-child { margin-top: 0; }
+.callout-body ul { margin: 6px 0 0; padding-left: 17px; }
+.callout-body li { margin: 2px 0; }
+.callout-title {
+  font-family: var(--f-head);
+  font-weight: 600;
+  font-size: 11.5px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.callout.tutor_tip { background: var(--tip-fill); border-left-color: var(--tip-bar); }
+.callout.tutor_tip .callout-ico { background: var(--tip-bar); }
+.callout.tutor_tip .callout-title { color: var(--tip-ink); }
+.callout.key_points { background: var(--c-accent-soft); border-left-color: var(--c-primary); }
+.callout.key_points .callout-ico { background: var(--c-primary); color: var(--c-thead-ink); }
+.callout.key_points .callout-title { color: var(--c-primary-dark); }
+.callout.warning { background: var(--warn-fill); border-left-color: var(--warn-bar); }
+.callout.warning .callout-ico { background: var(--warn-bar); }
+.callout.warning .callout-title { color: var(--warn-ink); }
 
 /* ---- Confidence flags (uncertain extractions) ---- */
-.flag-low { box-shadow: inset 3px 0 0 0 #E0A100; padding-left: 8px; }
+.flag-low { box-shadow: inset 3px 0 0 0 var(--warn-bar); padding-left: 8px; }
 .flag-medium { box-shadow: inset 3px 0 0 0 #E9C46A; padding-left: 8px; }
 
 /* ---- Quote ---- */
 blockquote.quote {
+  position: relative;
   break-inside: avoid;
-  margin: 9px 0;
-  padding: 6px 12px;
+  margin: 0 0 24px;
+  padding: 18px 24px 18px 30px;
   border-left: 3px solid var(--c-accent);
+  background: var(--rule-soft);
+  border-radius: 0 12px 12px 0;
   font-style: italic;
-  color: #444;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
 }
-blockquote.quote cite { display: block; font-style: normal; font-size: 9.5px; color: #888; margin-top: 3px; }
+blockquote.quote::before {
+  content: "\201C";
+  position: absolute;
+  top: 4px;
+  left: 12px;
+  font-family: var(--f-banner);
+  font-weight: 800;
+  font-size: 46px;
+  line-height: 1;
+  color: var(--c-accent-soft);
+  pointer-events: none;
+}
+blockquote.quote cite {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--faint);
+  margin-top: 8px;
+}
 
 /* ---- Canvas mode: free positioning on a fixed A4 page (Note.layout_mode == "canvas") ---- */
-/* The page is a real A4 (210x297mm); page.pdf() exports it 1:1 with zero margins. Each block is an
-   absolutely-placed box (% of the page); min-height (not height) lets text grow rather than clip. */
 .canvas-page { position: relative; width: 210mm; height: 297mm; margin: 0 auto;
-  background: var(--c-page); overflow: hidden; }
+  background: var(--paper); overflow: hidden; }
 .canvas-item { position: absolute; box-sizing: border-box; }
 .canvas-item > * { margin-top: 0; margin-bottom: 0; }
-@media screen { .canvas-page { box-shadow: 0 8px 28px rgba(0, 0, 0, .15); border-radius: 4px; } }
+@media screen { .canvas-page { box-shadow: var(--sheet-shadow); border-radius: 4px; } }
