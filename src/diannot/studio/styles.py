@@ -27,7 +27,7 @@ _CSS = """
   --dn-page:#FAF8F5; --dn-card:#FFFFFF; --dn-sunken:#F1EDE7;
   --dn-hairline:#ECE7E0; --dn-ink:#262335; --dn-muted:#6E6A7C; --dn-faint:#9A96A6;
   --dn-shadow:0 2px 10px rgba(38,35,53,.07), 0 1px 2px rgba(38,35,53,.04);
-  --dn-radius-card:14px; --dn-radius-control:10px;
+  --dn-radius-card:12px; --dn-radius-control:8px;
 }
 .body--dark{
   --dn-primary:#A7A4E0; --dn-primary-soft:#26252F; --dn-on-primary:#16161D;
