@@ -14,7 +14,8 @@ from pathlib import Path
 
 from nicegui import app
 
-from ..models import Note, load_note
+from ..io_utils import atomic_write_text
+from ..models import BannerBlock, BodyBlock, Box, Note, ScriptHeadingBlock, load_note
 
 
 def _base_dir() -> Path:
@@ -97,6 +98,71 @@ def delete_note(note_path: str | Path) -> str | None:
             shutil.move(str(src), str(trash / dname))
     (trash / "_origin.txt").write_text(str(p.parent), encoding="utf-8")
     return str(trash)
+
+
+def create_blank_note(workspace: str | Path, canvas: bool = False) -> Path:
+    """Write a fresh untitled note (or canvas note) into ``workspace``; return its path.
+
+    Shared by the Library page and the sidebar's "New note" button so both create the
+    same starter note without duplicating the seed content.
+    """
+    if canvas:
+        note = Note(
+            title="Untitled Canvas",
+            layout_mode="canvas",
+            blocks=[
+                BannerBlock(text="Untitled Canvas", id=uuid.uuid4().hex, box=Box(x=5, y=4, w=90, h=12, z=1)),
+                BodyBlock(text="Drag me anywhere · double-click to edit · use “Add text/image” above.",
+                          id=uuid.uuid4().hex, box=Box(x=8, y=22, w=46, h=16, z=2)),
+            ],
+        )
+        stem = "untitled-canvas"
+    else:
+        note = Note(
+            title="Untitled Note",
+            blocks=[
+                BannerBlock(text="Untitled Note"),
+                ScriptHeadingBlock(text="Section title"),
+                BodyBlock(text="Write your **notes** here. Bold the **testable** terms."),
+            ],
+        )
+        stem = "untitled"
+    dest = Path(workspace) / f"{stem}.note.json"
+    n = 1
+    while dest.exists():
+        dest = Path(workspace) / f"{stem}-{n}.note.json"
+        n += 1
+    atomic_write_text(dest, note.model_dump_json(indent=2, exclude_none=True))
+    return dest
+
+
+_SUBJECT_FALLBACK = "#3B3A5A"
+_subject_color_cache: dict[str | None, str] = {}
+
+
+def _subject_color(theme: str | None) -> str:
+    """The subject's swatch/tile color = its theme's primary (cached; falls back to indigo)."""
+    if theme not in _subject_color_cache:
+        try:
+            from ..config import Settings
+            from ..render import load_theme
+
+            _subject_color_cache[theme] = (
+                load_theme(theme, Settings().paths.themes_dir)["colors"].get("primary", _SUBJECT_FALLBACK)
+            )
+        except Exception:
+            _subject_color_cache[theme] = _SUBJECT_FALLBACK
+    return _subject_color_cache[theme]
+
+
+def subject_summary(notes: list[tuple[str, Note]]) -> list[dict]:
+    """Group notes by subject → ``{name, count, color}``, busiest first (for the sidebar list)."""
+    groups: dict[str, dict] = {}
+    for _path, note in notes:
+        name = note.subject or note.theme or "Uncategorized"
+        g = groups.setdefault(name, {"name": name, "count": 0, "color": _subject_color(note.theme)})
+        g["count"] += 1
+    return sorted(groups.values(), key=lambda g: (-g["count"], g["name"].lower()))
 
 
 def restore_note(trash_dir: str | Path) -> bool:

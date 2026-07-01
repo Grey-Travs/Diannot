@@ -1,22 +1,22 @@
-"""Home / Library — the redesigned landing: welcome hero, stat chips, a "continue
-studying" featured note, and a grid of subject-colored note cards.
+"""Home / Library — the Phase 03 redesign of ``design/Diannot Shell.html``.
 
-Layout/visuals are injected as one scoped stylesheet (``_HOME_CSS``); interactive bits
-(buttons, the new-note tile) stay real NiceGUI elements. Stats (cards, due, decks,
-quizzes, terms) are computed from the workspace's note + deck sidecar files.
+A clean page-header ("Library" + count + "Make notes from a file"), a search +
+subject filter row, a "Recently opened" strip, and a grid of subject-colored note
+tiles (a full-color header carrying the subject + note length, a white body with the
+title + recency). The sidebar (New note, nav, subjects, workspace) lives in
+:mod:`diannot.studio.layout`. Interactive bits stay real NiceGUI elements; the look is
+one scoped stylesheet (``_LIB_CSS``).
 """
 from __future__ import annotations
 
 import asyncio
-import uuid
+import time
 from pathlib import Path
 from urllib.parse import quote
 
 from nicegui import app, ui
 
-from ...config import STUDY_ENABLED, Settings
-from ...io_utils import atomic_write_text
-from ...models import BannerBlock, BodyBlock, Box, Note, ScriptHeadingBlock
+from ...config import Settings
 from ...render import load_theme
 from .. import updater
 from ..background import run_blocking
@@ -29,51 +29,54 @@ from ..workspace import (
     list_notes,
     restore_note,
     set_workspace,
+    subject_summary,
 )
 
-_FALLBACK = {"primary": "#6B4B90", "primary_dark": "#57357D", "accent_soft": "#EFEAF5"}
+_FALLBACK = {"primary": "#3B3A5A", "primary_dark": "#2E2D49", "accent_soft": "#ECEBF4"}
 _THEME_CACHE: dict[str, dict] = {}
 
-_HOME_CSS = """
-.dn-main{--v:#3B3A5A;--vd:#2E2D49;--vt:#ECEBF4;--coral:#B3789B;--ink:#262335;--muted:#6E6A7C;
-  --line:#ECE7E0;--card:#fff;--shadow:0 2px 10px rgba(38,35,53,.07),0 1px 2px rgba(38,35,53,.04);max-width:1180px;width:100%;padding:6px 8px 40px;display:flex;flex-direction:column;gap:18px}
-.dn-hero{position:relative;overflow:hidden;border-radius:20px;padding:24px 30px;color:#fff;
-  background:linear-gradient(120deg,#34334F 0%,#45436A 58%,#5A5688 120%);box-shadow:var(--shadow)}
-.dn-hero .h{font-family:'Baloo 2','Poppins',sans-serif;font-weight:800;font-size:27px;margin-bottom:4px}
-.dn-hero .p{opacity:.94;font-size:14.5px;margin-bottom:16px}
-.dn-blob{position:absolute;right:-40px;top:-60px;width:210px;height:210px;border-radius:50%;background:rgba(255,255,255,.10)}
-.dn-blob2{position:absolute;right:130px;bottom:-90px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.08)}
-.dn-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
-.dn-stat{background:var(--card);border-radius:14px;box-shadow:var(--shadow);border:1px solid var(--line);padding:14px 16px;display:flex;align-items:center;gap:13px}
-.dn-stat .ico{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;color:#fff;flex:none}
-.dn-stat .num{font-family:'Poppins',sans-serif;font-weight:700;font-size:21px;line-height:1;color:var(--ink)}
-.dn-stat .lbl{color:var(--muted);font-size:12.5px;font-weight:600;margin-top:3px}
-.dn-eyebrow{font-family:'Poppins',sans-serif;font-weight:700;font-size:11.5px;letter-spacing:1.3px;text-transform:uppercase;color:var(--coral);margin:6px 2px -6px}
-.dn-feature{display:flex;background:var(--card);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line)}
-.dn-feature .spine{width:10px;flex:none}
-.dn-feature .fb{padding:22px 26px;flex:1}
-.dn-feature .ft{font-family:'Baloo 2','Poppins',sans-serif;font-weight:800;font-size:25px;margin-bottom:6px;color:var(--ink)}
-.dn-feature .fm{color:var(--muted);font-size:13.5px;margin-bottom:13px}
-.dn-feature .fx{color:var(--muted);font-size:14px;line-height:1.5;max-width:560px;margin-bottom:16px}
-.dn-sec{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
-.dn-sec .t{font-family:'Poppins',sans-serif;font-weight:700;font-size:20px;color:var(--ink)}
-.dn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(236px,1fr));gap:18px}
-.dn-card{background:var(--card);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;border:1px solid var(--line);
-  transition:transform .15s,box-shadow .15s;display:flex;flex-direction:column}
-.dn-card:hover{transform:translateY(-4px);box-shadow:0 16px 34px rgba(38,35,53,.14)}
-.dn-card .strip{height:7px;flex:none}
-.dn-card .cb{padding:15px 16px 4px}
-.dn-card .ct{font-family:'Poppins',sans-serif;font-weight:600;font-size:16px;color:var(--ink);margin-bottom:8px}
-.dn-chip{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 11px;border-radius:999px}
-.dn-cmeta{display:flex;gap:11px;color:var(--muted);font-size:12px;margin:11px 0 2px}
-.dn-cmeta b{color:var(--ink)}
-.dn-newtile{border:2px dashed #D8D0C4;background:#FBF9F5;border-radius:16px;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;color:var(--vd);font-family:'Poppins',sans-serif;font-weight:600;
-  font-size:14px;cursor:pointer;min-height:150px;transition:background .15s,border-color .15s}
-.dn-newtile:hover{background:#F4F0EA;border-color:var(--v)}
-/* dark mode: flip the custom Home surfaces to the design's dark palette */
-.body--dark .dn-main{--ink:#E9E7F2;--muted:#A6A2B8;--line:#2A2A35;--card:#1E1E27;--vd:#A7A4E0}
-.body--dark .dn-newtile{background:#121218;border-color:#3A3A47;color:#A7A4E0}
+_LIB_CSS = """
+.dn-lib{max-width:1200px;width:100%;padding:0 0 40px}
+/* page header */
+.dn-lib-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:26px 30px 18px;flex-wrap:wrap}
+.dn-eyebrow2{font-size:13px;color:var(--dn-faint);font-weight:600;margin-bottom:2px}
+.dn-h1{font-family:'Poppins',sans-serif;font-weight:600;font-size:28px;line-height:1.1;color:var(--dn-ink)}
+.dn-sub2{font-size:14px;color:var(--dn-muted);margin-top:5px}
+.dn-link{color:var(--dn-primary);cursor:pointer;font-weight:600}
+.dn-link:hover{text-decoration:underline}
+.dn-cta.q-btn{height:44px;border-radius:var(--dn-radius-control);font-family:'Poppins',sans-serif;font-weight:600}
+/* search row */
+.dn-search-row{display:flex;align-items:center;gap:12px;padding:0 30px 18px;flex-wrap:wrap}
+.dn-search{flex:1;min-width:220px}
+.dn-subjsel{min-width:170px}
+.dn-search .q-field__control,.dn-subjsel .q-field__control{background:var(--dn-card)}
+.dn-search .q-field__control:before,.dn-subjsel .q-field__control:before{border-color:var(--dn-hairline)}
+/* recently opened */
+.dn-reclabel{font-family:'Poppins',sans-serif;font-weight:600;font-size:15px;color:var(--dn-ink);padding:0 30px;margin:2px 0 12px}
+.dn-recgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;padding:0 30px 26px}
+.dn-rec{display:flex;gap:13px;padding:14px;background:var(--dn-card);border:1px solid var(--dn-hairline);border-radius:var(--dn-radius-card);box-shadow:var(--dn-shadow);cursor:pointer;transition:transform .13s,box-shadow .13s}
+.dn-rec:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(38,35,53,.13)}
+.dn-rec-bar{width:5px;flex:none;border-radius:3px}
+.dn-rec-subj{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dn-rec-title{font-family:'Poppins',sans-serif;font-weight:600;font-size:14.5px;color:var(--dn-ink);line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dn-rec-meta{font-size:11.5px;color:var(--dn-faint);margin-top:9px}
+/* all notes */
+.dn-sec2{display:flex;align-items:center;justify-content:space-between;padding:0 30px;margin-bottom:13px}
+.dn-sec2-t{font-family:'Poppins',sans-serif;font-weight:600;font-size:15px;color:var(--dn-ink)}
+.dn-sec2-s{font-size:13px;color:var(--dn-faint)}
+.dn-tilegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:18px;padding:0 30px}
+.dn-tile{border:1px solid var(--dn-hairline);border-radius:var(--dn-radius-card);overflow:hidden;background:var(--dn-card);box-shadow:var(--dn-shadow);cursor:pointer;display:flex;flex-direction:column;transition:transform .13s,box-shadow .13s}
+.dn-tile:hover{transform:translateY(-3px);box-shadow:0 16px 34px rgba(38,35,53,.15)}
+.dn-tile-head{position:relative;min-height:74px;padding:13px 15px;display:flex;flex-direction:column;justify-content:space-between;gap:8px}
+.dn-tile-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.dn-tile-subj{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.92);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dn-tile-menu.q-btn{color:#fff;background:rgba(255,255,255,.18);width:24px;height:24px;min-height:24px;border-radius:6px}
+.dn-tile-pages{font-size:11px;color:rgba(255,255,255,.85)}
+.dn-tile-body{padding:13px 15px 15px}
+.dn-tile-title{font-family:'Poppins',sans-serif;font-weight:600;font-size:15px;color:var(--dn-ink);line-height:1.3;margin-bottom:7px}
+.dn-tile-date{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dn-faint)}
+.dn-empty{margin:0 30px;padding:26px;border:1px dashed var(--dn-hairline);border-radius:var(--dn-radius-card);background:var(--dn-card)}
+.dn-nomatch{padding:24px 30px;color:var(--dn-muted)}
 """
 
 
@@ -87,17 +90,27 @@ def _theme_colors(theme: str | None, themes_dir: Path) -> dict:
     return _THEME_CACHE[key]
 
 
-def _base(note_path: str) -> str:
-    return note_path[: -len(".note.json")] if note_path.endswith(".note.json") else note_path
+def _ago(path: str) -> str:
+    try:
+        secs = time.time() - Path(path).stat().st_mtime
+    except OSError:
+        return ""
+    mins, hours, days = secs / 60, secs / 3600, secs / 86400
+    if days >= 14:
+        return f"{int(days // 7)} weeks ago"
+    if days >= 1:
+        n = int(days)
+        return f"{n} day{'s' if n != 1 else ''} ago"
+    if hours >= 1:
+        n = int(hours)
+        return f"{n} hour{'s' if n != 1 else ''} ago"
+    if mins >= 1:
+        return f"{int(mins)} min ago"
+    return "just now"
 
 
-def _excerpt(note: Note) -> str:
-    for b in note.blocks:
-        if getattr(b, "type", "") == "body":
-            t = (getattr(b, "text", "") or "").replace("**", "").replace("\n", " ").strip()
-            if t:
-                return t[:170] + "…" if len(t) > 170 else t
-    return note.subject or note.theme or "Open this note to start studying."
+def _open(path: str) -> None:
+    ui.navigate.to(f"/note?path={quote(path)}")
 
 
 def _confirm_delete(path: str, title: str) -> None:
@@ -119,38 +132,6 @@ def _confirm_delete(path: str, title: str) -> None:
             ui.button("Cancel", on_click=dialog.close).props("flat no-caps")
             ui.button("Delete", icon="delete", on_click=do_delete).props("color=negative no-caps")
     dialog.open()
-
-
-def _new_note(workspace: Path, canvas: bool = False) -> None:
-    if canvas:
-        # A blank free-positioning note, seeded with a couple of placed boxes to drag.
-        note = Note(
-            title="Untitled Canvas",
-            layout_mode="canvas",
-            blocks=[
-                BannerBlock(text="Untitled Canvas", id=uuid.uuid4().hex, box=Box(x=5, y=4, w=90, h=12, z=1)),
-                BodyBlock(text="Drag me anywhere · double-click to edit · use “Add text/image” above.",
-                          id=uuid.uuid4().hex, box=Box(x=8, y=22, w=46, h=16, z=2)),
-            ],
-        )
-        stem = "untitled-canvas"
-    else:
-        note = Note(
-            title="Untitled Note",
-            blocks=[
-                BannerBlock(text="Untitled Note"),
-                ScriptHeadingBlock(text="Section title"),
-                BodyBlock(text="Write your **notes** here. Bold the **testable** terms."),
-            ],
-        )
-        stem = "untitled"
-    dest = Path(workspace) / f"{stem}.note.json"
-    n = 1
-    while dest.exists():
-        dest = Path(workspace) / f"{stem}-{n}.note.json"
-        n += 1
-    atomic_write_text(dest, note.model_dump_json(indent=2, exclude_none=True))
-    ui.navigate.to(f"/note?path={quote(str(dest))}")
 
 
 def _change_folder_dialog(workspace: Path | None) -> None:
@@ -175,85 +156,69 @@ def _change_folder_dialog(workspace: Path | None) -> None:
     dialog.open()
 
 
-def _stat(icon: str, num: int, label: str, color: str) -> None:
-    with ui.element("div").classes("dn-stat"):
-        with ui.element("div").classes("ico").style(f"background:{color}"):
-            ui.icon(icon)
-        with ui.element("div"):
-            ui.label(str(num)).classes("num")
-            ui.label(label).classes("lbl")
+def _recent_card(r: dict) -> None:
+    with ui.element("div").classes("dn-rec").on("click", lambda p=r["path"]: _open(p)):
+        ui.element("div").classes("dn-rec-bar").style(f"background:{r['color']}")
+        with ui.element("div").classes("min-w-0").style("flex:1"):
+            ui.label(r["subject"]).classes("dn-rec-subj").style(f"color:{r['color']}")
+            ui.label(r["note"].title).classes("dn-rec-title")
+            ui.label(f"Opened {r['ago']}").classes("dn-rec-meta")
 
 
-def _note_card(path: str, note: Note, cards: int, due: int, terms: int, colors: dict) -> None:
-    primary = colors.get("primary", _FALLBACK["primary"])
-    soft = colors.get("accent_soft", _FALLBACK["accent_soft"])
-    deep = colors.get("primary_dark", primary)
-    with ui.element("article").classes("dn-card"):
-        ui.element("div").classes("strip").style(f"background:{primary}")
-        with ui.element("div").classes("cb"):
-            ui.label(note.title).classes("ct")
-            ui.label(note.subject or note.theme).classes("dn-chip").style(f"background:{soft};color:{deep}")
-            if STUDY_ENABLED:
-                ui.html(f"<span><b>{cards}</b> cards</span><span><b>{due}</b> due</span>"
-                        f"<span><b>{terms}</b> terms</span>").classes("dn-cmeta")
-            else:
-                ui.html(f"<span><b>{terms}</b> terms</span>").classes("dn-cmeta")
-        with ui.row().classes("items-center gap-1 q-px-sm q-pb-sm q-pt-xs").style("border-top:1px solid #F4F2F8;margin-top:10px"):
-            ui.button("Open", icon="edit",
-                      on_click=lambda p=path: ui.navigate.to(f"/note?path={quote(p)}")).props("flat dense no-caps")
-            if STUDY_ENABLED:
-                ui.button("Study", icon="school",
-                          on_click=lambda p=path: ui.navigate.to(f"/study?path={quote(p)}")).props("flat dense no-caps")
-            ui.space()
-            ui.button(icon="delete",
-                      on_click=lambda p=path, t=note.title: _confirm_delete(p, t)).props("flat dense color=negative")
+def _tile(r: dict) -> None:
+    with ui.element("article").classes("dn-tile").on("click", lambda p=r["path"]: _open(p)):
+        with ui.element("div").classes("dn-tile-head").style(f"background:{r['color']}"):
+            with ui.element("div").classes("dn-tile-top"):
+                ui.label(r["subject"]).classes("dn-tile-subj")
+                menu_btn = ui.button(icon="more_horiz").props("flat dense").classes("dn-tile-menu")
+                menu_btn.on("click.stop", lambda: None)
+                with menu_btn, ui.menu():
+                    ui.menu_item("Open", lambda p=r["path"]: _open(p))
+                    ui.menu_item("Delete", lambda p=r["path"], t=r["note"].title: _confirm_delete(p, t))
+            ui.label(f"{r['terms']} terms").classes("dn-tile-pages")
+        with ui.element("div").classes("dn-tile-body"):
+            ui.label(r["note"].title).classes("dn-tile-title")
+            with ui.element("div").classes("dn-tile-date"):
+                ui.icon("schedule").style("font-size:14px")
+                ui.label(r["ago"])
 
 
 @ui.page("/")
 def home_page() -> None:
     studio_layout("")
     maybe_first_run()
-    ui.add_css(_HOME_CSS)
+    ui.add_css(_LIB_CSS)
     settings = Settings()
     themes_dir = settings.paths.themes_dir
     workspace = current_workspace()
     notes = list_notes(workspace) if workspace else []
 
-    # ---- compute stats from the workspace ----
-    rows: list[tuple] = []  # (path, note, cards, due, terms)
-    n_decks = n_quiz = total_due = 0
-    # Study stats (decks/cards/due/quizzes) are only computed when study mode is on. Importing
-    # cards/srs here (lazily) is also what keeps those study modules off the app's startup path.
-    if STUDY_ENABLED:
-        from ...cards import load_deck
-        from ...srs import due_cards
+    rows: list[dict] = []
     for path, note in notes:
-        base = _base(path)
-        cards = due = 0
-        if STUDY_ENABLED:
-            if Path(base + ".deck.json").exists():
-                n_decks += 1
-                try:
-                    deck = load_deck(base + ".deck.json")
-                    cards, due = len(deck.cards), len(due_cards(deck))
-                    total_due += due
-                except Exception:
-                    pass
-            if Path(base + ".quiz.json").exists():
-                n_quiz += 1
-        terms = sum(1 for b in note.blocks if getattr(b, "type", "") == "term_definition")
-        rows.append((path, note, cards, due, terms))
+        colors = _theme_colors(note.theme, themes_dir)
+        try:
+            mtime = Path(path).stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        rows.append({
+            "path": path,
+            "note": note,
+            "terms": sum(1 for b in note.blocks if getattr(b, "type", "") == "term_definition"),
+            "color": colors.get("primary", _FALLBACK["primary"]),
+            "subject": note.subject or note.theme or "Uncategorized",
+            "ago": _ago(path),
+            "mtime": mtime,
+        })
+    rows.sort(key=lambda r: r["mtime"], reverse=True)
+    subjects = subject_summary(notes)
+    n_notes, n_subjects = len(notes), len(subjects)
+    recents = rows[:3]
+    filt = {"q": "", "subject": "All subjects"}
 
-    # "Continue studying": prefer a note with cards due, else the most-recently-edited.
-    continue_row = None
-    if rows:
-        pool = [r for r in rows if r[3] > 0] or rows  # r[3] = due count
-        continue_row = max(pool, key=lambda r: Path(r[0]).stat().st_mtime)
+    with ui.element("div").classes("dn-lib"):
+        update_slot = ui.column().classes("w-full").style("padding:0 30px")
 
-    with ui.element("div").classes("dn-main"):
-        update_slot = ui.column().classes("w-full")  # filled by the background update check (installed build)
-
-        # Undo banner for the most recent soft-delete (a queue, so back-to-back deletes stay undoable)
+        # Undo banner for the most recent soft-delete.
         undos = app.storage.general.get("_undo_deletes") or []
         undo = undos.pop() if undos else None
         app.storage.general["_undo_deletes"] = undos
@@ -265,110 +230,82 @@ def home_page() -> None:
                     ui.notify("Couldn't undo — a file with that name already exists. Your deleted note "
                               "is safe in the workspace's .trash folder.", type="warning", multi_line=True)
 
-            with ui.card().classes("w-full p-3").style("background:#FCEBEE;border:1px solid #E7799B;border-radius:14px"):
-                with ui.row().classes("items-center gap-2 w-full no-wrap"):
-                    ui.icon("delete_outline").style("color:#C0354B")
-                    ui.label(f"Deleted “{undo.get('title', 'note')}”").classes("text-bold")
-                    ui.space()
-                    ui.button("Undo", icon="undo", on_click=_do_undo).props("flat no-caps color=primary")
+            with ui.element("div").style("padding:16px 30px 0"):
+                with ui.card().classes("w-full p-3").style("background:#FCEBEE;border:1px solid #E7799B;border-radius:14px"):
+                    with ui.row().classes("items-center gap-2 w-full no-wrap"):
+                        ui.icon("delete_outline").style("color:#C0354B")
+                        ui.label(f"Deleted “{undo.get('title', 'note')}”").classes("text-bold")
+                        ui.space()
+                        ui.button("Undo", icon="undo", on_click=_do_undo).props("flat no-caps color=primary")
 
-        # ---- welcome hero ----
-        with ui.element("section").classes("dn-hero"):
-            ui.element("div").classes("dn-blob")
-            ui.element("div").classes("dn-blob2")
-            ui.label("Welcome back 👋").classes("h")
-            n_notes = len(notes)
-            notes_txt = f"{n_notes} note{'s' if n_notes != 1 else ''}"
-            if STUDY_ENABLED:
-                due_txt = f"{total_due} card{'s' if total_due != 1 else ''} due" if total_due else "no cards due"
-                ui.html(f"<div class='p'>You have <b>{due_txt}</b> today across <b>{notes_txt}</b>. "
-                        "Pick up where you left off.</div>")
-            else:
-                ui.html(f"<div class='p'>You have <b>{notes_txt}</b> in your library. "
-                        "Pick up where you left off.</div>")
-            with ui.row().classes("gap-2"):
-                # The Review button is the primary hero CTA when there are due cards; otherwise
-                # (including whenever study mode is off) "Make notes" takes the primary slot.
-                review_cta = STUDY_ENABLED and total_due
-                if review_cta:
-                    ui.button(f"Review {total_due} due", icon="school",
-                              on_click=lambda: ui.navigate.to("/review")).props("unelevated no-caps color=white text-color=primary")
-                ui.button("Make notes from a file", icon="auto_awesome",
-                          on_click=lambda: ui.navigate.to("/import")).props(
-                    ("outline" if review_cta else "unelevated") + " no-caps color=white"
-                    + ("" if review_cta else " text-color=primary"))
-                ui.button("New note", icon="note_add",
-                          on_click=lambda: workspace and _new_note(workspace)).props("outline no-caps color=white")
-                ui.button("Canvas note", icon="dashboard_customize",
-                          on_click=lambda: workspace and _new_note(workspace, canvas=True)) \
-                    .props("outline no-caps color=white").tooltip("A free-positioning page — drag text & images anywhere")
+        # ---- page header ----
+        with ui.element("div").classes("dn-lib-head"):
+            with ui.element("div"):
+                ui.label("Workspace").classes("dn-eyebrow2")
+                ui.label("Library").classes("dn-h1")
+                with ui.row().classes("dn-sub2 items-center gap-1"):
+                    ui.label(f"{n_notes} note{'s' if n_notes != 1 else ''} · "
+                             f"{n_subjects} subject{'s' if n_subjects != 1 else ''} ·")
+                    ui.label("Change folder").classes("dn-link").on(
+                        "click", lambda: _change_folder_dialog(workspace))
+            ui.button("Make notes from a file", icon="upload_file",
+                      on_click=lambda: ui.navigate.to("/import")).props("unelevated no-caps").classes("dn-cta")
 
-        # ---- stat chips ----
-        with ui.element("div").classes("dn-stats"):
-            _stat("description", len(notes), "Notes", "#3B3A5A")
-            if STUDY_ENABLED:
-                _stat("schedule", total_due, "Cards due", "#B3789B")
-                _stat("style", n_decks, "Decks", "#1E9E8F")
-                _stat("quiz", n_quiz, "Quizzes", "#5B6CC0")
-            else:
-                _stat("label", sum(r[4] for r in rows), "Key terms", "#B3789B")
+        # ---- search + subject filter ----
+        with ui.element("div").classes("dn-search-row"):
+            search = ui.input(placeholder="Search notes, subjects, terms…") \
+                .props("outlined dense clearable debounce=250").classes("dn-search")
+            with search.add_slot("prepend"):
+                ui.icon("search").props("size=18px").classes("text-grey")
+            subject_sel = ui.select(["All subjects"] + [s["name"] for s in subjects], value="All subjects") \
+                .props("outlined dense options-dense").classes("dn-subjsel")
 
-        # ---- continue where you left off ----
-        if continue_row:
-            cpath, cnote, ccards, cdue, _ = continue_row
-            cc = _theme_colors(cnote.theme, themes_dir)
-            cprimary = cc.get("primary", _FALLBACK["primary"])
-            ui.label("Continue studying" if STUDY_ENABLED else "Pick up where you left off").classes("dn-eyebrow")
-            with ui.element("div").classes("dn-feature"):
-                ui.element("div").classes("spine").style(f"background:{cprimary}")
-                with ui.element("div").classes("fb"):
-                    ui.label(cnote.title).classes("ft")
-                    meta = f"<b>{cnote.subject or cnote.theme}</b>"
-                    if STUDY_ENABLED:
-                        meta += f" &nbsp;·&nbsp; {ccards} flashcards"
-                        if cdue:
-                            meta += f" &nbsp;·&nbsp; <b>{cdue} due today</b>"
-                    ui.html(f"<div class='fm'>{meta}</div>")
-                    ui.html(f"<div class='fx'>{_excerpt(cnote)}</div>")
-                    with ui.row().classes("gap-2"):
-                        if STUDY_ENABLED:
-                            ui.button("Continue", icon="play_arrow",
-                                      on_click=lambda p=cpath: ui.navigate.to(f"/study?path={quote(p)}")).props("unelevated no-caps color=primary")
-                        open_props = "outline no-caps color=primary" if STUDY_ENABLED else "unelevated no-caps color=primary"
-                        ui.button("Open editor", icon="edit",
-                                  on_click=lambda p=cpath: ui.navigate.to(f"/note?path={quote(p)}")).props(open_props)
+        # ---- recently opened ----
+        if recents:
+            ui.label("Recently opened").classes("dn-reclabel")
+            with ui.element("div").classes("dn-recgrid"):
+                for r in recents:
+                    _recent_card(r)
 
-        # ---- your notes header ----
-        with ui.element("div").classes("dn-sec"):
-            ui.label("Your notes").classes("t")
-            with ui.row().classes("items-center gap-2"):
-                ui.label(f"Folder: {workspace}" if workspace else "No folder selected").classes("text-caption text-grey")
-                ui.button("Change folder", icon="folder",
-                          on_click=lambda: _change_folder_dialog(workspace)).props("flat dense no-caps")
+        # ---- all notes header ----
+        with ui.element("div").classes("dn-sec2"):
+            ui.label("All notes").classes("dn-sec2-t")
+            ui.label("Sorted by recent").classes("dn-sec2-s")
 
-        # ---- grid (cards + new-note tile) ----
-        if not notes:
-            with ui.card().classes("p-4"):
-                ui.label("No notes here yet.").classes("text-subtitle1")
-                ui.label("Import a file to make notes, or load the sample notebook to look around.").classes("text-grey")
-                if SAMPLE_DIR.exists():
-                    ui.button("Load the sample notebook", icon="folder_open",
-                              on_click=lambda: (set_workspace(SAMPLE_DIR), ui.navigate.to("/"))).props("no-caps")
-        else:
-            with ui.element("div").classes("dn-grid"):
-                for path, note, cards, due, terms in rows:
-                    _note_card(path, note, cards, due, terms, _theme_colors(note.theme, themes_dir))
-                with ui.element("div").classes("dn-newtile").on("click", lambda: workspace and _new_note(workspace)):
-                    ui.icon("note_add").style("font-size:30px;color:#3B3A5A;margin-bottom:8px")
-                    ui.label("New blank note")
+        # ---- notes grid (filtered by search + subject) ----
+        @ui.refreshable
+        def notes_grid() -> None:
+            if not rows:
+                with ui.element("div").classes("dn-empty"):
+                    ui.label("No notes here yet.").classes("text-subtitle1")
+                    ui.label("Import a file to make notes, or load the sample notebook to look around.").classes("text-grey")
+                    if SAMPLE_DIR.exists():
+                        ui.button("Load the sample notebook", icon="folder_open",
+                                  on_click=lambda: (set_workspace(SAMPLE_DIR), ui.navigate.to("/"))).props("no-caps")
+                return
+            q = (filt["q"] or "").lower().strip()
+            subj = filt["subject"]
+            shown = [r for r in rows
+                     if (subj == "All subjects" or r["subject"] == subj)
+                     and (not q or q in r["note"].title.lower() or q in r["subject"].lower())]
+            if not shown:
+                ui.label("No notes match your search.").classes("dn-nomatch")
+                return
+            with ui.element("div").classes("dn-tilegrid"):
+                for r in shown:
+                    _tile(r)
 
-    # ---- self-update (installed build only): check GitHub Releases, offer a one-click update ----
+        notes_grid()
+        search.on_value_change(lambda e: (filt.__setitem__("q", e.value or ""), notes_grid.refresh()))
+        subject_sel.on_value_change(lambda e: (filt.__setitem__("subject", e.value or "All subjects"), notes_grid.refresh()))
+
+    # ---- self-update (installed build only) ----
     def _show_update_banner(info: dict) -> None:
         update_slot.clear()
         with update_slot:
-            with ui.card().classes("w-full p-3").style("background:#EFEAF5;border:1px solid #6B4B90;border-radius:14px"):
+            with ui.card().classes("w-full p-3").style("background:#ECEBF4;border:1px solid #3B3A5A;border-radius:14px"):
                 with ui.row().classes("items-center gap-2 w-full no-wrap"):
-                    ui.icon("system_update").style("color:#57357D;font-size:22px")
+                    ui.icon("system_update").style("color:#2E2D49;font-size:22px")
                     ui.label(f"Update available — v{info['version']} (you have v{updater.current_version()})").classes("text-bold")
                     ui.space()
                     ui.button("Update now", icon="download",
@@ -384,7 +321,6 @@ def home_page() -> None:
         try:
             path = await run_blocking(updater.download_and_verify, info)
         except updater.IntegrityError:
-            # Content-fail-closed: a partial/tampered/rolled-back update was refused. Stay put.
             ui.notify("Update couldn't be verified and was cancelled. You're still on the working "
                       "version.", type="negative", multi_line=True)
             _show_update_banner(info)

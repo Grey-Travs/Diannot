@@ -45,10 +45,28 @@ body{ font-family:'Nunito Sans', system-ui, -apple-system, 'Segoe UI', sans-seri
 /* calm light header (a hairline-bordered surface, not a saturated brand bar) */
 .q-header{ background:var(--dn-card); color:var(--dn-ink); box-shadow:none; border-bottom:1px solid var(--dn-hairline); }
 .dn-brand{ color:var(--dn-primary); }
-/* left drawer: warm surface, hairline separator, rounded nav items */
-.q-drawer{ background:var(--dn-page); color:var(--dn-ink); }
+/* left sidebar (design/Diannot Shell.html): white card surface, hairline separator */
+.q-drawer{ background:var(--dn-card); color:var(--dn-ink); }
 .q-drawer.q-drawer--bordered{ border-right:1px solid var(--dn-hairline); }
-.q-drawer .q-btn{ border-radius:10px; }
+.dn-side-drawer .q-drawer__content{ padding:0; height:100%; }
+.dn-side{ height:100%; padding:16px 12px; gap:2px; flex-wrap:nowrap; }
+.dn-newbtn{ width:100%; height:42px; border-radius:var(--dn-radius-control); font-family:'Poppins',sans-serif; font-weight:600; margin-bottom:6px; }
+.dn-navlabel{ font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--dn-faint); padding:8px 10px 4px; }
+.dn-nav.q-btn{ width:100%; min-height:40px; border-radius:8px; color:var(--dn-muted); font-weight:500; padding:0 11px; }
+.dn-nav .q-btn__content{ justify-content:flex-start; gap:11px; }
+.dn-nav.dn-nav-active.q-btn{ background:var(--dn-primary-soft); color:var(--dn-primary); font-weight:600; }
+.dn-side-div{ height:1px; background:var(--dn-hairline); margin:12px 6px; }
+.dn-subs{ gap:1px; overflow:auto; padding:0; flex-wrap:nowrap; width:100%; }
+.dn-sub{ display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:7px; font-size:13.5px; color:var(--dn-muted); width:100%; }
+.dn-sub-dot{ width:9px; height:9px; border-radius:3px; flex:none; }
+.dn-sub-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dn-sub-count{ font-size:12px; color:var(--dn-faint); }
+.dn-side-spacer{ flex:1 1 auto; min-height:8px; }
+.dn-side-foot{ display:flex; align-items:center; gap:10px; padding:10px; border-top:1px solid var(--dn-hairline); margin:6px 2px 0; }
+.dn-foot-ico{ width:30px; height:30px; border-radius:50%; background:var(--dn-primary-soft); color:var(--dn-primary); font-size:16px; }
+.dn-foot-txt{ line-height:1.2; min-width:0; }
+.dn-foot-name{ font-size:13px; font-weight:600; color:var(--dn-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
+.dn-foot-sub{ font-size:11px; color:var(--dn-faint); }
 /* soft cards everywhere */
 .q-card{ background:var(--dn-card); border-radius:var(--dn-radius-card); box-shadow:var(--dn-shadow); border:1px solid var(--dn-hairline); }
 /* keep the editor's dense block rows flat (a big shadow per row is too heavy) */
