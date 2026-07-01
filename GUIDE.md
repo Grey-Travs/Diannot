@@ -20,7 +20,7 @@ A first-run tour walks you through it. Studio has everything in one place:
 - **Home** — your notes; make a new one or open one.
 - **Make notes** — drop in a PDF/slides/document/photo; the AI structures it.
 - **Note** — edit blocks with a live preview; export PDF/PNG.
-- **Study** — flashcards, spaced-repetition review, quizzes, glossary.
+- **Study** *(coming soon)* — flashcards, spaced-repetition review, quizzes, glossary.
 - **Search** — find anything across your notes.
 - **Settings** — paste a Claude key (or sign in to the Claude app) and pick defaults.
 

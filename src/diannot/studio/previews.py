@@ -12,11 +12,13 @@ from fastapi import File, Query, UploadFile
 from nicegui import app
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse
 
-from ..cards import Deck, render_deck_html
 from ..config import Settings
 from ..models import Note, load_note
-from ..quiz import Quiz, render_quiz_html
 from ..render import render_note_html
+
+# NOTE: cards.py (deck) and quiz.py are study-feature modules. They're imported lazily inside
+# the /preview/deck and /preview/quiz handlers below — never at module top — so that loading
+# previews for the (non-study) note editor doesn't drag the study modules onto the startup path.
 
 
 @app.get("/preview/note", response_class=HTMLResponse)
@@ -27,12 +29,16 @@ def preview_note(path: str = Query(...), v: int = 0, theme: str | None = None, p
 
 @app.get("/preview/deck", response_class=HTMLResponse)
 def preview_deck(path: str = Query(...), v: int = 0, theme: str = "circulatory") -> str:
+    from ..cards import Deck, render_deck_html  # lazy: keep the study modules off the startup path
+
     deck = Deck.model_validate_json(Path(path).read_text(encoding="utf-8"))
     return render_deck_html(deck, theme_name=theme, settings=Settings())
 
 
 @app.get("/preview/quiz", response_class=HTMLResponse)
 def preview_quiz(path: str = Query(...), v: int = 0, theme: str = "circulatory") -> str:
+    from ..quiz import Quiz, render_quiz_html  # lazy: keep the study modules off the startup path
+
     quiz = Quiz.model_validate_json(Path(path).read_text(encoding="utf-8"))
     return render_quiz_html(quiz, theme_name=theme, settings=Settings())
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from nicegui import app, ui
 
-from ...config import Settings, update_config
+from ...config import STUDY_ENABLED, Settings, update_config
 from ...providers import ollama_available, ollama_models
 from .. import credentials, updater, usage
 from ..background import run_blocking
@@ -76,17 +76,21 @@ def settings_page() -> None:
             notes_val = settings.providers.notes if settings.providers.notes in engines else "gemini"
             study_val = settings.providers.study if settings.providers.study in engines else "gemini"
             ui.label("AI engine").classes("text-subtitle1 text-bold")
-            ui.label("Make notes with free Gemini (online, no setup), a local model (Ollama, offline), "
-                     "or Claude (uses your own Claude subscription). Claude has the highest limits, so "
-                     "it's best for large files. Study tools can use any of these.").classes("text-caption text-grey")
+            engine_help = ("Make notes with free Gemini (online, no setup), a local model (Ollama, "
+                           "offline), or Claude (uses your own Claude subscription). Claude has the "
+                           "highest limits, so it's best for large files.")
+            if STUDY_ENABLED:
+                engine_help += " Study tools can use any of these."
+            ui.label(engine_help).classes("text-caption text-grey")
             if not claude_ready:
                 ui.label("To enable Claude: install it once with  npm i -g @anthropic-ai/claude-code  "
                          "(needs Node.js), then restart Diannot. It uses your own Claude login — no API "
                          "cost.").classes("text-caption text-grey")
             notes_engine = ui.select(engines, value=notes_val,
                                      label="Make-notes engine").classes("w-80")
-            study_engine = ui.select(engines, value=study_val,
-                                     label="Study (quiz / flashcards) engine").classes("w-80")
+            if STUDY_ENABLED:  # study engine picker is hidden while study mode is gated off
+                study_engine = ui.select(engines, value=study_val,
+                                         label="Study (quiz / flashcards) engine").classes("w-80")
 
             cur_model = settings.models.structure
             model_opts = dict(_CLAUDE_MODELS)
@@ -99,13 +103,14 @@ def settings_page() -> None:
                      "big imports fail and fall back to raw text. Only used when the make-notes engine "
                      "is Claude.").classes("text-caption text-grey")
 
-            with ui.row().classes("items-center gap-3"):
-                budget = ui.number(label="Monthly study budget", value=usage.cap(),
-                                   min=1, max=10000).props("dense").classes("w-48")
-                budget.on_value_change(lambda e: usage.set_cap(int(e.value or usage.DEFAULT_CAP)))
-                ui.label(f"Used this month: {usage.used()}").classes("text-caption text-grey")
-            ui.label("A soft cap on quiz / flashcard generations (we can't read a provider's real "
-                     "balance). Resets monthly; the Study page shows the count.").classes("text-caption text-grey")
+            if STUDY_ENABLED:  # the study budget governs quiz/flashcard generation — hidden while gated
+                with ui.row().classes("items-center gap-3"):
+                    budget = ui.number(label="Monthly study budget", value=usage.cap(),
+                                       min=1, max=10000).props("dense").classes("w-48")
+                    budget.on_value_change(lambda e: usage.set_cap(int(e.value or usage.DEFAULT_CAP)))
+                    ui.label(f"Used this month: {usage.used()}").classes("text-caption text-grey")
+                ui.label("A soft cap on quiz / flashcard generations (we can't read a provider's real "
+                         "balance). Resets monthly; the Study page shows the count.").classes("text-caption text-grey")
 
             with ui.expansion("Local model (Ollama) setup", icon="dns").classes("w-full"):
                 ui.label("Install Ollama from ollama.com and start it, then pull a model — e.g. run:  "
@@ -131,14 +136,17 @@ def settings_page() -> None:
                 ui.button("Check Ollama", icon="wifi_tethering", on_click=check_ollama).props("flat no-caps")
 
             def save_engine() -> None:
-                update_config("providers", {
+                providers = {
                     "notes": notes_engine.value,
-                    "study": study_engine.value,
                     "ollama_host": host.value,
                     "ollama_model": omodel.value,
-                })
+                }
+                if STUDY_ENABLED:  # leave the saved study provider untouched while its picker is hidden
+                    providers["study"] = study_engine.value
+                update_config("providers", providers)
                 update_config("models", {"structure": claude_model.value, "summarize": claude_model.value})
-                ui.notify("Saved. New notes and study will use this engine.", type="positive")
+                ui.notify("Saved. New notes and study will use this engine." if STUDY_ENABLED
+                          else "Saved. New notes will use this engine.", type="positive")
 
             ui.button("Save engine", icon="save", on_click=save_engine).props("color=primary no-caps")
 

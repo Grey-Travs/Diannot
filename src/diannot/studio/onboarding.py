@@ -6,6 +6,7 @@ from pathlib import Path
 
 from nicegui import app, ui
 
+from ..config import STUDY_ENABLED
 from .credentials import resolve_gemini_keys
 from .workspace import SAMPLE_DIR, current_workspace, set_workspace
 
@@ -64,8 +65,11 @@ def maybe_first_run() -> None:
         return
     with ui.dialog() as dialog, ui.card().classes("p-4 gap-2 max-w-md"):
         ui.label("Welcome to Diannot Studio 👋").classes("text-h6")
-        ui.label("Turn your study material into beautiful notes, then study them with flashcards, "
-                 "quizzes and search — all on your own computer.").classes("text-grey")
+        blurb = ("Turn your study material into beautiful notes, then study them with flashcards, "
+                 "quizzes and search — all on your own computer." if STUDY_ENABLED else
+                 "Turn your study material into beautiful, styled notes you can browse, edit and "
+                 "export — all on your own computer.")
+        ui.label(blurb).classes("text-grey")
         ui.label("• Pick a folder for your notes (or explore our sample).")
         if _ai_ready():
             ui.label("• No setup needed — you can start right now.")
@@ -88,6 +92,8 @@ def show_tour() -> None:
     with ui.dialog() as dialog, ui.card().classes("p-4 gap-2 max-w-md"):
         ui.label("Quick tour").classes("text-h6")
         for title, body in _TOUR_STEPS:
+            if not STUDY_ENABLED and title == "Study":
+                continue  # study mode is gated behind "coming soon"
             with ui.row().classes("items-start gap-2"):
                 ui.icon("chevron_right").classes("text-primary")
                 with ui.column().classes("gap-0"):

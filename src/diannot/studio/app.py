@@ -10,6 +10,7 @@ from pathlib import Path
 
 from nicegui import ui
 
+from ..config import STUDY_ENABLED
 from . import previews  # noqa: F401  — registers /preview routes
 from .credentials import (
     load_embedded_defaults,
@@ -22,12 +23,19 @@ from .pages import (  # noqa: F401  — registers @ui.page
     home,
     import_,
     note,
-    review_all,
     search,
     settings,
-    study,
 )
 from .workspace import set_initial_workspace
+
+# Study mode is gated (see config.STUDY_ENABLED). When on, wire the study hub + workspace
+# review — importing these registers /study and /review AND pulls in the flashcards/SRS/quiz/
+# glossary modules, which is exactly why they're kept out of the eager block above: a disabled
+# build never loads them. When off, register calm "Coming soon" placeholders at those routes.
+if STUDY_ENABLED:
+    from .pages import review_all, study  # noqa: F401  — registers @ui.page
+else:
+    from .pages import study_coming_soon  # noqa: F401  — registers @ui.page
 
 
 def launch_studio(

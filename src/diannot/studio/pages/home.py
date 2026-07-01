@@ -14,12 +14,10 @@ from urllib.parse import quote
 
 from nicegui import app, ui
 
-from ...cards import load_deck
-from ...config import Settings
+from ...config import STUDY_ENABLED, Settings
 from ...io_utils import atomic_write_text
 from ...models import BannerBlock, BodyBlock, Box, Note, ScriptHeadingBlock
 from ...render import load_theme
-from ...srs import due_cards
 from .. import updater
 from ..background import run_blocking
 from ..layout import studio_layout
@@ -45,7 +43,7 @@ _HOME_CSS = """
 .dn-hero .p{opacity:.94;font-size:14.5px;margin-bottom:16px}
 .dn-blob{position:absolute;right:-40px;top:-60px;width:210px;height:210px;border-radius:50%;background:rgba(255,255,255,.12)}
 .dn-blob2{position:absolute;right:130px;bottom:-90px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.10)}
-.dn-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.dn-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
 .dn-stat{background:#fff;border-radius:16px;box-shadow:var(--shadow);border:1px solid #F0EEF5;padding:14px 16px;display:flex;align-items:center;gap:13px}
 .dn-stat .ico{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;color:#fff;flex:none}
 .dn-stat .num{font-family:'Poppins',sans-serif;font-weight:700;font-size:21px;line-height:1;color:var(--ink)}
@@ -198,13 +196,17 @@ def _note_card(path: str, note: Note, cards: int, due: int, terms: int, colors: 
         with ui.element("div").classes("cb"):
             ui.label(note.title).classes("ct")
             ui.label(note.subject or note.theme).classes("dn-chip").style(f"background:{soft};color:{deep}")
-            ui.html(f"<span><b>{cards}</b> cards</span><span><b>{due}</b> due</span>"
-                    f"<span><b>{terms}</b> terms</span>").classes("dn-cmeta")
+            if STUDY_ENABLED:
+                ui.html(f"<span><b>{cards}</b> cards</span><span><b>{due}</b> due</span>"
+                        f"<span><b>{terms}</b> terms</span>").classes("dn-cmeta")
+            else:
+                ui.html(f"<span><b>{terms}</b> terms</span>").classes("dn-cmeta")
         with ui.row().classes("items-center gap-1 q-px-sm q-pb-sm q-pt-xs").style("border-top:1px solid #F4F2F8;margin-top:10px"):
             ui.button("Open", icon="edit",
                       on_click=lambda p=path: ui.navigate.to(f"/note?path={quote(p)}")).props("flat dense no-caps")
-            ui.button("Study", icon="school",
-                      on_click=lambda p=path: ui.navigate.to(f"/study?path={quote(p)}")).props("flat dense no-caps")
+            if STUDY_ENABLED:
+                ui.button("Study", icon="school",
+                          on_click=lambda p=path: ui.navigate.to(f"/study?path={quote(p)}")).props("flat dense no-caps")
             ui.space()
             ui.button(icon="delete",
                       on_click=lambda p=path, t=note.title: _confirm_delete(p, t)).props("flat dense color=negative")
@@ -223,19 +225,25 @@ def home_page() -> None:
     # ---- compute stats from the workspace ----
     rows: list[tuple] = []  # (path, note, cards, due, terms)
     n_decks = n_quiz = total_due = 0
+    # Study stats (decks/cards/due/quizzes) are only computed when study mode is on. Importing
+    # cards/srs here (lazily) is also what keeps those study modules off the app's startup path.
+    if STUDY_ENABLED:
+        from ...cards import load_deck
+        from ...srs import due_cards
     for path, note in notes:
         base = _base(path)
         cards = due = 0
-        if Path(base + ".deck.json").exists():
-            n_decks += 1
-            try:
-                deck = load_deck(base + ".deck.json")
-                cards, due = len(deck.cards), len(due_cards(deck))
-                total_due += due
-            except Exception:
-                pass
-        if Path(base + ".quiz.json").exists():
-            n_quiz += 1
+        if STUDY_ENABLED:
+            if Path(base + ".deck.json").exists():
+                n_decks += 1
+                try:
+                    deck = load_deck(base + ".deck.json")
+                    cards, due = len(deck.cards), len(due_cards(deck))
+                    total_due += due
+                except Exception:
+                    pass
+            if Path(base + ".quiz.json").exists():
+                n_quiz += 1
         terms = sum(1 for b in note.blocks if getattr(b, "type", "") == "term_definition")
         rows.append((path, note, cards, due, terms))
 
@@ -272,17 +280,26 @@ def home_page() -> None:
             ui.element("div").classes("dn-blob")
             ui.element("div").classes("dn-blob2")
             ui.label("Welcome back 👋").classes("h")
-            due_txt = f"{total_due} card{'s' if total_due != 1 else ''} due" if total_due else "no cards due"
-            ui.html(f"<div class='p'>You have <b>{due_txt}</b> today across <b>{len(notes)} note"
-                    f"{'s' if len(notes) != 1 else ''}</b>. Pick up where you left off.</div>")
+            n_notes = len(notes)
+            notes_txt = f"{n_notes} note{'s' if n_notes != 1 else ''}"
+            if STUDY_ENABLED:
+                due_txt = f"{total_due} card{'s' if total_due != 1 else ''} due" if total_due else "no cards due"
+                ui.html(f"<div class='p'>You have <b>{due_txt}</b> today across <b>{notes_txt}</b>. "
+                        "Pick up where you left off.</div>")
+            else:
+                ui.html(f"<div class='p'>You have <b>{notes_txt}</b> in your library. "
+                        "Pick up where you left off.</div>")
             with ui.row().classes("gap-2"):
-                if total_due:
+                # The Review button is the primary hero CTA when there are due cards; otherwise
+                # (including whenever study mode is off) "Make notes" takes the primary slot.
+                review_cta = STUDY_ENABLED and total_due
+                if review_cta:
                     ui.button(f"Review {total_due} due", icon="school",
                               on_click=lambda: ui.navigate.to("/review")).props("unelevated no-caps color=white text-color=primary")
                 ui.button("Make notes from a file", icon="auto_awesome",
                           on_click=lambda: ui.navigate.to("/import")).props(
-                    ("outline" if total_due else "unelevated") + " no-caps color=white"
-                    + ("" if total_due else " text-color=primary"))
+                    ("outline" if review_cta else "unelevated") + " no-caps color=white"
+                    + ("" if review_cta else " text-color=primary"))
                 ui.button("New note", icon="note_add",
                           on_click=lambda: workspace and _new_note(workspace)).props("outline no-caps color=white")
                 ui.button("Canvas note", icon="dashboard_customize",
@@ -292,30 +309,37 @@ def home_page() -> None:
         # ---- stat chips ----
         with ui.element("div").classes("dn-stats"):
             _stat("description", len(notes), "Notes", "#6B4B90")
-            _stat("schedule", total_due, "Cards due", "#E7799B")
-            _stat("style", n_decks, "Decks", "#1E9E8F")
-            _stat("quiz", n_quiz, "Quizzes", "#5B6CC0")
+            if STUDY_ENABLED:
+                _stat("schedule", total_due, "Cards due", "#E7799B")
+                _stat("style", n_decks, "Decks", "#1E9E8F")
+                _stat("quiz", n_quiz, "Quizzes", "#5B6CC0")
+            else:
+                _stat("label", sum(r[4] for r in rows), "Key terms", "#E7799B")
 
-        # ---- continue studying ----
+        # ---- continue where you left off ----
         if continue_row:
             cpath, cnote, ccards, cdue, _ = continue_row
             cc = _theme_colors(cnote.theme, themes_dir)
             cprimary = cc.get("primary", _FALLBACK["primary"])
-            ui.label("Continue studying").classes("dn-eyebrow")
+            ui.label("Continue studying" if STUDY_ENABLED else "Pick up where you left off").classes("dn-eyebrow")
             with ui.element("div").classes("dn-feature"):
                 ui.element("div").classes("spine").style(f"background:{cprimary}")
                 with ui.element("div").classes("fb"):
                     ui.label(cnote.title).classes("ft")
-                    meta = f"<b>{cnote.subject or cnote.theme}</b> &nbsp;·&nbsp; {ccards} flashcards"
-                    if cdue:
-                        meta += f" &nbsp;·&nbsp; <b>{cdue} due today</b>"
+                    meta = f"<b>{cnote.subject or cnote.theme}</b>"
+                    if STUDY_ENABLED:
+                        meta += f" &nbsp;·&nbsp; {ccards} flashcards"
+                        if cdue:
+                            meta += f" &nbsp;·&nbsp; <b>{cdue} due today</b>"
                     ui.html(f"<div class='fm'>{meta}</div>")
                     ui.html(f"<div class='fx'>{_excerpt(cnote)}</div>")
                     with ui.row().classes("gap-2"):
-                        ui.button("Continue", icon="play_arrow",
-                                  on_click=lambda p=cpath: ui.navigate.to(f"/study?path={quote(p)}")).props("unelevated no-caps color=primary")
+                        if STUDY_ENABLED:
+                            ui.button("Continue", icon="play_arrow",
+                                      on_click=lambda p=cpath: ui.navigate.to(f"/study?path={quote(p)}")).props("unelevated no-caps color=primary")
+                        open_props = "outline no-caps color=primary" if STUDY_ENABLED else "unelevated no-caps color=primary"
                         ui.button("Open editor", icon="edit",
-                                  on_click=lambda p=cpath: ui.navigate.to(f"/note?path={quote(p)}")).props("outline no-caps color=primary")
+                                  on_click=lambda p=cpath: ui.navigate.to(f"/note?path={quote(p)}")).props(open_props)
 
         # ---- your notes header ----
         with ui.element("div").classes("dn-sec"):

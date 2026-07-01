@@ -28,7 +28,7 @@ system below is encoded faithfully from those pages.
 | CLI | Typer | |
 | Config | pydantic-settings reading `diannot.toml` (+ `DIANNOT_` env) | Themes & packs are **data**, not code. |
 | Editor UI | **NiceGUI** (Phase 3) — `diannot edit` | Local web editor: block reorder (drag/buttons), inline edit, image upload, live preview, save. |
-| Front-end app | **Diannot Studio** — NiceGUI multi-page app (`diannot studio`); `gui` extra (nicegui + pywebview) | Native desktop window *or* browser from one codebase. Library · Import wizard · Editor · Study hub · Search · Settings + first-run tour. Composes the existing backend (`src/diannot/studio/`). |
+| Front-end app | **Diannot Studio** — NiceGUI multi-page app (`diannot studio`); `gui` extra (nicegui + pywebview) | Native desktop window *or* browser from one codebase. Library · Import wizard · Editor · Search · Settings + first-run tour (the Study hub is shelved behind a "coming soon" gate — `config.STUDY_ENABLED=False`; code stays dormant in-tree). Composes the existing backend (`src/diannot/studio/`). |
 | Packaging | **PyInstaller** one-folder (`diannot_studio.spec` + `studio_main.py`) | Double-click `dist/DiannotStudio/DiannotStudio.exe`; bundles the Claude Agent SDK CLI + themes/packs/fonts + sample. Chromium excluded → installed lazily on first PDF/PNG export (`export._ensure_chromium`). `freeze_support()` + frozen-aware `SAMPLE_DIR`. |
 
 ---

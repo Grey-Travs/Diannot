@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from nicegui import app, ui
 
+from ..config import STUDY_ENABLED
 from .styles import inject_global
 
 NAV = [
@@ -18,6 +19,9 @@ NAV = [
     ("Settings", "/settings", "settings"),
     ("Help", "/help", "help_outline"),
 ]
+
+# Nav routes belonging to study mode — hidden from the drawer while STUDY_ENABLED is False.
+_STUDY_NAV_ROUTES = {"/review"}
 
 
 def studio_layout(active: str = "") -> None:
@@ -33,6 +37,8 @@ def studio_layout(active: str = "") -> None:
     drawer = ui.left_drawer(value=True).props("width=220 behavior=desktop bordered")
     with drawer:
         for label, route, icon in NAV:
+            if not STUDY_ENABLED and route in _STUDY_NAV_ROUTES:
+                continue
             btn = ui.button(label, icon=icon, on_click=lambda r=route: ui.navigate.to(r))
             btn.props("flat align=left no-caps").classes("w-full")
             if route.strip("/") == active:

@@ -23,8 +23,8 @@ uv sync --extra gui
 uv run diannot studio          # native desktop window (or add --web for a browser tab)
 ```
 Studio wraps everything — a notes Library, an Import wizard, the block Editor with live
-preview + PDF/PNG export, a Study hub (flashcards · spaced-repetition review · quizzes ·
-glossary), Search, and Settings — with a beginner-friendly first-run tour.
+preview + PDF/PNG export, Search, and Settings — with a beginner-friendly first-run tour.
+(A Study hub — flashcards · spaced-repetition review · quizzes · glossary — is **coming soon**.)
 
 **Make a double-click app** (no terminal for end users):
 ```bash

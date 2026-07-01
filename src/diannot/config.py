@@ -24,6 +24,13 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_THEMES_DIR = PACKAGE_DIR / "themes"
 DEFAULT_PACKS_DIR = PACKAGE_DIR / "assets" / "packs"
 
+# Feature flag — study mode (flashcards, spaced-repetition review, quizzes, Anki export,
+# glossary) is shelved behind a "Coming soon" gate for now. The code stays dormant in-tree;
+# this just unwires it from the running app. Flip to True to restore the Review nav entry,
+# the /study + /review routes, and Home's study stats. Keep the study/SRS/Anki imports lazy
+# (inside the functions that use them) so a disabled feature costs nothing at startup.
+STUDY_ENABLED = False
+
 
 class ModelsCfg(BaseModel):
     """Claude model IDs for each AI step."""
